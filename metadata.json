@@ -1,0 +1,6 @@
+{
+  "name": "Hand Draw Animation Engine",
+  "description": "Advanced client-side stroke extraction and hand-drawn animation engine for raster and vector graphics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
