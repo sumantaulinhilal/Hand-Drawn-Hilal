@@ -34,37 +34,39 @@ import { useAnimationLoop } from './hooks/useAnimationLoop';
 
 const DEFAULT_ANALYSIS_SETTINGS: AnalysisSettings = {
   grayscale: false,
-  contrast: 20,
+  contrast: 25,
   brightness: 0,
   threshold: 120,
   edgeSensitivity: 7,
   detailSensitivity: 6,
-  noiseReduction: 1,
+  noiseReduction: 2,
   skeletonization: true,
-  strokeSimplification: 1.5,
-  minStrokeLength: 10,
+  strokeSimplification: 2.0,
+  minStrokeLength: 16,
+  strokeDensity: 6,
+  fillDensity: 7,
   invert: false,
   autoTraceSvg: true
 };
 
 const DEFAULT_DRAWING_SETTINGS: DrawingSettings = {
-  strokeWidth: 4,
+  strokeWidth: 3.5,
   strokeOpacity: 0.95,
   drawingSpeed: 1.0,
-  pressureVariation: 0.5,
-  smoothness: 2,
-  handJitter: 2,
-  naturalVariation: 3,
-  strokeOrderPriority: 'smart',
+  pressureVariation: 0.3,
+  smoothness: 3,
+  handJitter: 0,
+  naturalVariation: 1,
+  strokeOrderPriority: 'left-to-right',
   showHandCursor: true,
   handType: 'pen',
   concurrentStrokes: 1
 };
 
 const DEFAULT_ANIMATION_SETTINGS: AnimationSettings = {
-  duration: 15,
-  startDelay: 0.5,
-  endDelay: 1.0,
+  duration: 5.0,
+  startDelay: 0.2,
+  endDelay: 4.0,
   easing: 'natural-hand',
   loop: true,
   reverse: false
@@ -73,7 +75,7 @@ const DEFAULT_ANIMATION_SETTINGS: AnimationSettings = {
 const DEFAULT_BACKGROUND_SETTINGS: BackgroundSettings = {
   type: 'white',
   customColor: '#ffffff',
-  originalOpacity: 0.2
+  originalOpacity: 0.0
 };
 
 export default function App() {
@@ -122,17 +124,18 @@ export default function App() {
   // Main Animation Project State
   const [project, setProject] = useState<AnimationProject>(() => {
     const initialPreset = PRESET_DRAWINGS[0];
-    const initialStrokes = parseSvgToStrokes(initialPreset.svgData, 800, 800);
-    const organizedStrokes = organizeStrokes(initialStrokes, DEFAULT_DRAWING_SETTINGS, 800, 800);
+    const initialStrokes = parseSvgToStrokes(initialPreset.svgData, 1280, 720);
+    const organizedStrokes = organizeStrokes(initialStrokes, DEFAULT_DRAWING_SETTINGS, 1280, 720);
 
     return {
       id: initialPreset.id,
       name: initialPreset.name,
       sourceType: 'svg',
       sourceUrl: initialPreset.svgData,
-      originalWidth: 800,
-      originalHeight: 800,
-      aspectRatio: 1,
+      originalWidth: 1280,
+      originalHeight: 720,
+      aspectRatio: 16 / 9,
+      aspectRatioPreset: '16:9',
       strokes: organizedStrokes,
       analysisSettings: DEFAULT_ANALYSIS_SETTINGS,
       drawingSettings: DEFAULT_DRAWING_SETTINGS,
@@ -222,8 +225,35 @@ export default function App() {
       const img = new Image();
       img.crossOrigin = 'anonymous';
       img.onload = () => {
-        const targetWidth = 800;
-        const targetHeight = 800;
+        const imgAspect = img.naturalWidth / img.naturalHeight;
+        let targetWidth = 1280;
+        let targetHeight = 720;
+
+        const preset = project.aspectRatioPreset || '16:9';
+        if (preset === 'auto') {
+          targetWidth = 1280;
+          targetHeight = Math.max(360, Math.min(2160, Math.round(1280 / imgAspect)));
+        } else if (preset === '4:3') {
+          targetWidth = 1024;
+          targetHeight = 768;
+        } else if (preset === '1:1') {
+          targetWidth = 800;
+          targetHeight = 800;
+        } else if (preset === '9:16') {
+          targetWidth = 720;
+          targetHeight = 1280;
+        } else {
+          // '16:9'
+          targetWidth = 1280;
+          targetHeight = 720;
+        }
+
+        setProject((prev) => ({
+          ...prev,
+          originalWidth: targetWidth,
+          originalHeight: targetHeight,
+          aspectRatio: targetWidth / targetHeight
+        }));
 
         const { imageData } = preprocessRasterImage(
           img,
@@ -252,18 +282,39 @@ export default function App() {
         img.src = imageSource.src;
       }
     },
-    [project.analysisSettings, project.drawingSettings]
+    [project.analysisSettings, project.drawingSettings, project.aspectRatioPreset]
   );
 
   // Handle Loading Image / Preset
   const handleLoadImage = (sourceUrl: string, sourceType: 'raster' | 'svg') => {
+    let targetWidth = project.originalWidth || 1280;
+    let targetHeight = project.originalHeight || 720;
+
+    const preset = project.aspectRatioPreset || '16:9';
+    if (preset === '16:9') {
+      targetWidth = 1280;
+      targetHeight = 720;
+    } else if (preset === '4:3') {
+      targetWidth = 1024;
+      targetHeight = 768;
+    } else if (preset === '1:1') {
+      targetWidth = 800;
+      targetHeight = 800;
+    } else if (preset === '9:16') {
+      targetWidth = 720;
+      targetHeight = 1280;
+    }
+
     if (sourceType === 'svg') {
-      const extractedStrokes = parseSvgToStrokes(sourceUrl, 800, 800);
+      const extractedStrokes = parseSvgToStrokes(sourceUrl, targetWidth, targetHeight);
       const optimized = extractedStrokes.map((s) => optimizeStroke(s, project.drawingSettings));
-      const organized = organizeStrokes(optimized, project.drawingSettings, 800, 800);
+      const organized = organizeStrokes(optimized, project.drawingSettings, targetWidth, targetHeight);
 
       setProject((prev) => ({
         ...prev,
+        originalWidth: targetWidth,
+        originalHeight: targetHeight,
+        aspectRatio: targetWidth / targetHeight,
         sourceType: 'svg',
         sourceUrl,
         strokes: organized
@@ -272,8 +323,15 @@ export default function App() {
     } else {
       setProject((prev) => ({
         ...prev,
+        originalWidth: targetWidth,
+        originalHeight: targetHeight,
+        aspectRatio: targetWidth / targetHeight,
         sourceType: 'raster',
-        sourceUrl
+        sourceUrl,
+        backgroundSettings: {
+          ...prev.backgroundSettings,
+          type: 'white'
+        }
       }));
       analyzeRasterImage(sourceUrl);
     }
@@ -391,6 +449,9 @@ export default function App() {
           edgeImageData={edgeImageData}
           skeletonImageData={skeletonImageData}
           isAnalyzing={isAnalyzing}
+          isPlaying={isPlaying}
+          onTogglePlay={togglePlay}
+          onRestart={restart}
         />
 
         {/* Floating Stroke Inspector Modal (Over Canvas) */}
@@ -421,10 +482,20 @@ export default function App() {
             }
           }}
           onUpdateDrawing={(updated) =>
-            setProject((prev) => ({
-              ...prev,
-              drawingSettings: { ...prev.drawingSettings, ...updated }
-            }))
+            setProject((prev) => {
+              const newSettings = { ...prev.drawingSettings, ...updated };
+              const reOrganized = organizeStrokes(
+                prev.strokes,
+                newSettings,
+                prev.originalWidth,
+                prev.originalHeight
+              );
+              return {
+                ...prev,
+                drawingSettings: newSettings,
+                strokes: reOrganized
+              };
+            })
           }
           onUpdateAnimation={(updated) =>
             setProject((prev) => ({
@@ -441,6 +512,30 @@ export default function App() {
           onUpdateStyleMode={(styleMode) =>
             setProject((prev) => ({ ...prev, styleMode }))
           }
+          onUpdateAspectRatioPreset={(preset) => {
+            let w = 1280;
+            let h = 720;
+            if (preset === '4:3') { w = 1024; h = 768; }
+            else if (preset === '1:1') { w = 800; h = 800; }
+            else if (preset === '9:16') { w = 720; h = 1280; }
+
+            setProject((prev) => ({
+              ...prev,
+              aspectRatioPreset: preset,
+              originalWidth: w,
+              originalHeight: h,
+              aspectRatio: w / h
+            }));
+
+            if (project.sourceType === 'raster' && project.sourceUrl) {
+              analyzeRasterImage(project.sourceUrl);
+            } else if (project.sourceType === 'svg' && project.sourceUrl) {
+              const extractedStrokes = parseSvgToStrokes(project.sourceUrl, w, h);
+              const optimized = extractedStrokes.map((s) => optimizeStroke(s, project.drawingSettings));
+              const organized = organizeStrokes(optimized, project.drawingSettings, w, h);
+              setProject((prev) => ({ ...prev, strokes: organized }));
+            }
+          }}
           onOpenUpload={() => setIsUploadOpen(true)}
           activeTab={activeControlTab}
           onChangeTab={setActiveControlTab}

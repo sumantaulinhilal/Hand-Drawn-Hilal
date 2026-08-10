@@ -22,10 +22,10 @@ export function organizeStrokes(
   // 1. Assign Layer priority scores if not present
   remaining.forEach((s) => {
     let score = 50;
-    if (s.layer === 'outline') score = 10;
-    else if (s.layer === 'structure') score = 20;
-    else if (s.layer === 'detail') score = 70;
-    else if (s.layer === 'shading' || s.layer === 'fill') score = 90;
+    if (s.layer === 'shading' || s.layer === 'fill') score = 10;
+    else if (s.layer === 'structure') score = 30;
+    else if (s.layer === 'outline') score = 50;
+    else if (s.layer === 'detail') score = 80;
 
     // Longer strokes usually drawn first
     score -= Math.min(20, s.length / 50);
@@ -35,7 +35,25 @@ export function organizeStrokes(
   // Sort initially by priority layer & length
   remaining.sort((a, b) => a.order - b.order);
 
-  if (settings.strokeOrderPriority === 'length') {
+  if (settings.strokeOrderPriority === 'left-to-right') {
+    remaining.sort((a, b) => {
+      const minXA = Math.min(a.startPoint.x, a.endPoint.x);
+      const minXB = Math.min(b.startPoint.x, b.endPoint.x);
+      return minXA - minXB;
+    });
+
+    remaining.forEach((s) => {
+      if (s.startPoint.x > s.endPoint.x) {
+        s.points.reverse();
+        const tempPt = s.startPoint;
+        s.startPoint = s.endPoint;
+        s.endPoint = tempPt;
+        s.direction = (s.direction + 180) % 360;
+      }
+    });
+
+    return remaining.map((s, idx) => ({ ...s, order: idx + 1 }));
+  } else if (settings.strokeOrderPriority === 'length') {
     remaining.sort((a, b) => b.length - a.length);
   } else if (settings.strokeOrderPriority === 'top-down') {
     remaining.sort((a, b) => a.startPoint.y - b.startPoint.y);

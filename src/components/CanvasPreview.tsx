@@ -19,7 +19,9 @@ import {
   Sparkles,
   Layers,
   PenTool,
-  Hash
+  Hash,
+  Play,
+  Pause
 } from 'lucide-react';
 
 interface CanvasPreviewProps {
@@ -31,6 +33,9 @@ interface CanvasPreviewProps {
   edgeImageData?: ImageData | null;
   skeletonImageData?: ImageData | null;
   isAnalyzing: boolean;
+  isPlaying?: boolean;
+  onTogglePlay?: () => void;
+  onRestart?: () => void;
 }
 
 export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
@@ -41,7 +46,10 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
   onSelectStroke,
   edgeImageData,
   skeletonImageData,
-  isAnalyzing
+  isAnalyzing,
+  isPlaying,
+  onTogglePlay,
+  onRestart
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -120,7 +128,8 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
         project.drawingSettings,
         project.backgroundSettings,
         viewSettings,
-        originalImgEl || undefined
+        originalImgEl || undefined,
+        { width, height }
       );
     }
   }, [
@@ -164,132 +173,9 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
       ref={containerRef}
       className="relative flex-1 bg-slate-950 flex flex-col overflow-hidden select-none"
     >
-      {/* Top View Mode Tabs */}
-      <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center bg-slate-900/90 backdrop-blur-md p-1 rounded-xl border border-slate-800 shadow-xl">
-        <button
-          onClick={() => setActiveTab('animation')}
-          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
-            activeTab === 'animation'
-              ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
-              : 'text-slate-400 hover:text-white hover:bg-slate-800'
-          }`}
-        >
-          <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-          <span>Animation Preview</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('analysis')}
-          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
-            activeTab === 'analysis'
-              ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
-              : 'text-slate-400 hover:text-white hover:bg-slate-800'
-          }`}
-        >
-          <GitCommit className="w-3.5 h-3.5 text-emerald-400" />
-          <span>Edge / Skeleton</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('original')}
-          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
-            activeTab === 'original'
-              ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
-              : 'text-slate-400 hover:text-white hover:bg-slate-800'
-          }`}
-        >
-          <Eye className="w-3.5 h-3.5 text-blue-400" />
-          <span>Original</span>
-        </button>
-      </div>
-
-      {/* Floating View Toggles Toolbar (Right side) */}
-      <div className="absolute top-3 right-3 z-20 flex flex-col gap-2 bg-slate-900/90 backdrop-blur-md p-2 rounded-xl border border-slate-800 shadow-xl">
-        {/* Toggle Show Original Overlay */}
-        <button
-          onClick={() => onUpdateViewSettings({ showOriginal: !viewSettings.showOriginal })}
-          className={`p-2 rounded-lg text-xs transition-colors flex items-center gap-2 ${
-            viewSettings.showOriginal
-              ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/40'
-              : 'text-slate-400 hover:bg-slate-800'
-          }`}
-          title="Toggle Show Original Reference Image"
-        >
-          {viewSettings.showOriginal ? <Eye className="w-4 h-4 text-indigo-400" /> : <EyeOff className="w-4 h-4" />}
-        </button>
-
-        {/* Toggle Show Drawing Vector Paths */}
-        <button
-          onClick={() => onUpdateViewSettings({ showDrawingPath: !viewSettings.showDrawingPath })}
-          className={`p-2 rounded-lg text-xs transition-colors flex items-center gap-2 ${
-            viewSettings.showDrawingPath
-              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
-              : 'text-slate-400 hover:bg-slate-800'
-          }`}
-          title="Toggle Show Drawing Vector Paths (Debug Lines & Nodes)"
-        >
-          <GitCommit className="w-4 h-4" />
-        </button>
-
-        {/* Toggle Show Stroke Index Numbers */}
-        {viewSettings.showDrawingPath && (
-          <button
-            onClick={() => onUpdateViewSettings({ showStrokeNumbers: !viewSettings.showStrokeNumbers })}
-            className={`p-2 rounded-lg text-xs transition-colors flex items-center gap-2 ${
-              viewSettings.showStrokeNumbers
-                ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
-                : 'text-slate-400 hover:bg-slate-800'
-            }`}
-            title="Toggle Show Stroke Index Numbers (#1, #2...)"
-          >
-            <Hash className="w-4 h-4" />
-          </button>
-        )}
-
-        {/* Toggle Show Skeleton in Analysis Tab */}
-        {activeTab === 'analysis' && (
-          <button
-            onClick={() => onUpdateViewSettings({ showSkeleton: !viewSettings.showSkeleton })}
-            className={`p-2 rounded-lg text-xs transition-colors flex items-center gap-2 ${
-              viewSettings.showSkeleton
-                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
-                : 'text-slate-400 hover:bg-slate-800'
-            }`}
-            title="Toggle Zhang-Suen Thinning Skeleton Lines"
-          >
-            <Layers className="w-4 h-4" />
-          </button>
-        )}
-
-        <div className="h-px bg-slate-800 my-0.5" />
-
-        {/* Zoom Controls */}
-        <button
-          onClick={() => setScale((s) => Math.min(5, s * 1.25))}
-          className="p-2 rounded-lg text-slate-400 hover:bg-slate-800 transition-colors"
-          title="Zoom In"
-        >
-          <ZoomIn className="w-4 h-4" />
-        </button>
-        <button
-          onClick={() => setScale((s) => Math.max(0.2, s * 0.8))}
-          className="p-2 rounded-lg text-slate-400 hover:bg-slate-800 transition-colors"
-          title="Zoom Out"
-        >
-          <ZoomOut className="w-4 h-4" />
-        </button>
-        <button
-          onClick={resetPanZoom}
-          className="p-2 rounded-lg text-slate-400 hover:bg-slate-800 transition-colors"
-          title="Reset Zoom & Pan"
-        >
-          <RotateCcw className="w-4 h-4" />
-        </button>
-      </div>
-
       {/* Main Canvas Viewport with Pan & Zoom */}
       <div
-        className="flex-1 flex items-center justify-center p-8 cursor-grab active:cursor-grabbing overflow-hidden"
+        className="flex-1 flex items-center justify-center p-4 sm:p-8 cursor-grab active:cursor-grabbing overflow-hidden"
         onWheel={handleWheel}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
@@ -301,19 +187,20 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
         <div
           style={{
             transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
-            transition: isPanning ? 'none' : 'transform 0.08s ease-out'
+            transition: isPanning ? 'none' : 'transform 0.08s ease-out',
+            aspectRatio: `${project.originalWidth} / ${project.originalHeight}`
           }}
-          className="relative shadow-2xl rounded-2xl overflow-hidden border border-slate-800/80 bg-white dark:bg-slate-900"
+          className="relative shadow-2xl rounded-2xl overflow-hidden border border-slate-800/80 bg-white dark:bg-slate-900 flex items-center justify-center max-w-full max-h-[78vh]"
         >
           <canvas
             ref={canvasRef}
             onClick={handleCanvasClick}
-            className="block max-w-full max-h-[72vh] object-contain"
+            className="block w-full h-full object-contain"
           />
 
           {/* Analyzing Progress Overlay */}
           {isAnalyzing && (
-            <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center gap-3 p-6 text-center">
+            <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center gap-3 p-6 text-center z-30">
               <div className="w-12 h-12 rounded-2xl bg-indigo-600/20 border border-indigo-500/50 flex items-center justify-center text-indigo-400 animate-spin">
                 <PenTool className="w-6 h-6" />
               </div>
@@ -328,17 +215,131 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
         </div>
       </div>
 
-      {/* Bottom Status & Info Bar */}
-      <div className="bg-slate-900/80 border-t border-slate-800/80 px-4 py-2 flex items-center justify-between text-xs text-slate-400 font-mono">
-        <div className="flex items-center gap-4">
-          <span>Zoom: {Math.round(scale * 100)}%</span>
-          {viewSettings.selectedStrokeId && (
-            <span className="text-amber-400 flex items-center gap-1 font-sans font-semibold">
-              <Sparkles className="w-3.5 h-3.5" /> Selected: {viewSettings.selectedStrokeId}
-            </span>
+      {/* Bottom Control & Status Bar (Clean & Outside Canvas) */}
+      <div className="bg-slate-900/95 border-t border-slate-800 px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-300">
+        <div className="flex items-center gap-2">
+          {/* Prominent Play / Pause Button directly under Canvas */}
+          {onTogglePlay && (
+            <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800 shadow-md">
+              <button
+                onClick={onTogglePlay}
+                className={`px-3.5 py-1.5 rounded-md font-bold text-xs flex items-center gap-1.5 transition-all shadow-sm ${
+                  isPlaying
+                    ? 'bg-amber-500 hover:bg-amber-600 text-slate-950'
+                    : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-600/30'
+                }`}
+                title={isPlaying ? 'Pause Animation' : 'Play Animation'}
+              >
+                {isPlaying ? <Pause className="w-3.5 h-3.5 fill-current" /> : <Play className="w-3.5 h-3.5 fill-current ml-0.5" />}
+                <span>{isPlaying ? 'PAUSE' : 'PLAY'}</span>
+              </button>
+
+              {onRestart && (
+                <button
+                  onClick={onRestart}
+                  className="p-1.5 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                  title="Replay from Beginning"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
           )}
+
+          {/* View Mode Switcher */}
+          <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
+          <button
+            onClick={() => setActiveTab('animation')}
+            className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 ${
+              activeTab === 'animation'
+                ? 'bg-indigo-600 text-white shadow-sm'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800'
+            }`}
+          >
+            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+            <span>Animation</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('analysis')}
+            className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 ${
+              activeTab === 'analysis'
+                ? 'bg-indigo-600 text-white shadow-sm'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800'
+            }`}
+          >
+            <GitCommit className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Skeleton</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('original')}
+            className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 ${
+              activeTab === 'original'
+                ? 'bg-indigo-600 text-white shadow-sm'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800'
+            }`}
+          >
+            <Eye className="w-3.5 h-3.5 text-blue-400" />
+            <span>Original</span>
+          </button>
         </div>
-        <div className="flex items-center gap-3">
+        </div>
+
+        {/* Zoom & View Toggles */}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 bg-slate-950 px-2 py-1 rounded-lg border border-slate-800 text-slate-400">
+            <button
+              onClick={() => setScale((s) => Math.max(0.2, s * 0.8))}
+              className="hover:text-white p-0.5"
+              title="Zoom Out"
+            >
+              <ZoomOut className="w-3.5 h-3.5" />
+            </button>
+            <span className="font-mono text-[11px] px-1">{Math.round(scale * 100)}%</span>
+            <button
+              onClick={() => setScale((s) => Math.min(5, s * 1.25))}
+              className="hover:text-white p-0.5"
+              title="Zoom In"
+            >
+              <ZoomIn className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={resetPanZoom}
+              className="hover:text-white p-0.5 ml-1 border-l border-slate-800 pl-1"
+              title="Reset Zoom"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <button
+            onClick={() => onUpdateViewSettings({ showOriginal: !viewSettings.showOriginal })}
+            className={`p-1.5 rounded-lg transition-colors border ${
+              viewSettings.showOriginal
+                ? 'bg-indigo-600/20 text-indigo-400 border-indigo-500/40'
+                : 'bg-slate-950 text-slate-400 border-slate-800 hover:bg-slate-800'
+            }`}
+            title="Toggle Reference Image Overlay"
+          >
+            {viewSettings.showOriginal ? <Eye className="w-3.5 h-3.5 text-indigo-400" /> : <EyeOff className="w-3.5 h-3.5" />}
+          </button>
+
+          <button
+            onClick={() => onUpdateViewSettings({ showDrawingPath: !viewSettings.showDrawingPath })}
+            className={`p-1.5 rounded-lg transition-colors border ${
+              viewSettings.showDrawingPath
+                ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
+                : 'bg-slate-950 text-slate-400 border-slate-800 hover:bg-slate-800'
+            }`}
+            title="Toggle Drawing Vector Paths Debug Overlay"
+          >
+            <GitCommit className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        {/* Status Info */}
+        <div className="flex items-center gap-3 font-mono text-[11px] text-slate-400">
           <span>{project.styleMode.replace('_', ' ')}</span>
           <span>•</span>
           <span>{frameState.currentTime.toFixed(1)}s / {frameState.totalDuration.toFixed(1)}s</span>

@@ -19,6 +19,7 @@ export interface AnimationFrameState {
   currentTime: number; // current playback time in seconds
   totalDuration: number;
   overallProgress: number; // 0.0 to 1.0
+  drawingProgress: number; // 0.0 to 1.0 (reaches 1.0 when all strokes finish drawing, before endDelay hold)
   activeStrokes: ActiveStrokeState[];
   completedStrokes: Stroke[];
   isComplete: boolean;
@@ -35,25 +36,24 @@ export function calculateTimelineSchedule(
 ): { scheduledStrokes: Stroke[]; computedTotalDuration: number } {
   if (strokes.length === 0) return { scheduledStrokes: [], computedTotalDuration: 0 };
 
-  const totalLength = strokes.reduce((acc, s) => acc + s.length, 0);
-  const targetDrawingDuration = Math.max(1, animationSettings.duration - animationSettings.startDelay - animationSettings.endDelay);
+  const speed = Math.max(0.1, drawingSpeedMultiplier);
+  const targetDrawingDuration = Math.max(0.5, animationSettings.duration / speed);
+  const startDelay = Math.max(0, animationSettings.startDelay);
+  const endDelay = Math.max(0, animationSettings.endDelay);
 
-  // Allocate duration proportional to stroke length
-  let currentTimeOffset = animationSettings.startDelay;
+  const totalLength = strokes.reduce((acc, s) => acc + s.length, 0);
 
   // Track active channels if concurrentStrokes > 1
-  const channelTime: number[] = new Array(concurrentStrokes).fill(animationSettings.startDelay);
+  const channelTime: number[] = new Array(Math.max(1, concurrentStrokes)).fill(startDelay);
 
-  const scheduledStrokes = strokes.map((s, idx) => {
-    // Base duration proportional to length
-    const rawDuration = (s.length / (totalLength || 1)) * targetDrawingDuration / drawingSpeedMultiplier;
-    const duration = Math.max(0.08, rawDuration);
+  const rawScheduled = strokes.map((s, idx) => {
+    const rawDuration = (s.length / (totalLength || 1)) * targetDrawingDuration;
+    const duration = Math.max(0.001, rawDuration);
 
-    // Pick channel with earliest available time
     let chosenChannel = 0;
     let minChannelTime = channelTime[0];
 
-    for (let c = 1; c < concurrentStrokes; c++) {
+    for (let c = 1; c < channelTime.length; c++) {
       if (channelTime[c] < minChannelTime) {
         minChannelTime = channelTime[c];
         chosenChannel = c;
@@ -61,7 +61,7 @@ export function calculateTimelineSchedule(
     }
 
     const startTime = channelTime[chosenChannel];
-    const interStrokeDelay = Math.min(0.05, duration * 0.1);
+    const interStrokeDelay = Math.min(0.002, duration * 0.05);
     channelTime[chosenChannel] = startTime + duration + interStrokeDelay;
 
     return {
@@ -73,7 +73,16 @@ export function calculateTimelineSchedule(
   });
 
   const maxEndTime = Math.max(...channelTime);
-  const computedTotalDuration = Math.max(animationSettings.duration, maxEndTime + animationSettings.endDelay);
+  const elapsedDrawing = maxEndTime - startDelay;
+  const scaleFactor = (elapsedDrawing > 0 && targetDrawingDuration > 0) ? (targetDrawingDuration / elapsedDrawing) : 1.0;
+
+  const scheduledStrokes = rawScheduled.map((s) => ({
+    ...s,
+    delay: startDelay + (s.delay - startDelay) * scaleFactor,
+    duration: Math.max(0.001, s.duration * scaleFactor)
+  }));
+
+  const computedTotalDuration = startDelay + targetDrawingDuration + endDelay;
 
   return { scheduledStrokes, computedTotalDuration };
 }
@@ -156,11 +165,17 @@ export function evaluateAnimationFrame(
         pressure: (p1.pressure || 1) + ((p2.pressure || 1) - (p1.pressure || 1)) * subProgress
       };
 
-      // Calculate pen angle in degrees
-      const dx = p2.x - p1.x;
-      const dy = p2.y - p1.y;
+      // Calculate pen angle in degrees with multi-point smoothing to eliminate hand jitter
+      const lookWindow = 4;
+      const idxPrev = Math.max(0, tipIndex - lookWindow);
+      const idxNext = Math.min(totalPoints - 1, tipIndex + lookWindow);
+      const ptPrev = stroke.points[idxPrev];
+      const ptNext = stroke.points[idxNext];
+
+      const dx = ptNext.x - ptPrev.x;
+      const dy = ptNext.y - ptPrev.y;
       let penAngle = stroke.direction;
-      if (Math.hypot(dx, dy) > 0.1) {
+      if (Math.hypot(dx, dy) > 0.5) {
         penAngle = (Math.atan2(dy, dx) * 180) / Math.PI;
       }
 
@@ -176,10 +191,17 @@ export function evaluateAnimationFrame(
     }
   }
 
+  const maxStrokeEndTime = scheduledStrokes.length > 0 
+    ? Math.max(...scheduledStrokes.map(s => s.delay + s.duration)) 
+    : totalDuration;
+
+  const drawingProgress = maxStrokeEndTime > 0 ? Math.min(1.0, currentTime / maxStrokeEndTime) : 1.0;
+
   return {
     currentTime,
     totalDuration,
     overallProgress,
+    drawingProgress,
     activeStrokes,
     completedStrokes,
     isComplete: currentTime >= totalDuration

@@ -22,6 +22,7 @@ interface ControlPanelProps {
   onUpdateAnimation: (updated: Partial<AnimationProject['animationSettings']>) => void;
   onUpdateBackground: (updated: Partial<AnimationProject['backgroundSettings']>) => void;
   onUpdateStyleMode: (mode: DrawingStyleMode) => void;
+  onUpdateAspectRatioPreset?: (preset: '16:9' | '4:3' | '1:1' | '9:16' | 'auto') => void;
   onOpenUpload: () => void;
   activeTab: 'image' | 'analysis' | 'drawing' | 'style' | 'animation' | 'background';
   onChangeTab: (tab: 'image' | 'analysis' | 'drawing' | 'style' | 'animation' | 'background') => void;
@@ -34,10 +35,56 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   onUpdateAnimation,
   onUpdateBackground,
   onUpdateStyleMode,
+  onUpdateAspectRatioPreset,
   onOpenUpload,
   activeTab,
   onChangeTab
 }) => {
+  const [controlMode, setControlMode] = React.useState<'simple' | 'advanced'>('simple');
+
+  const applyPreset = (preset: 'fast' | 'balanced' | 'hd') => {
+    if (preset === 'fast') {
+      onUpdateAnalysis({
+        strokeDensity: 4,
+        fillDensity: 4,
+        edgeSensitivity: 5,
+        strokeSimplification: 2.5,
+        threshold: 110,
+        noiseReduction: 3
+      });
+      onUpdateDrawing({
+        strokeWidth: 3,
+        pressureVariation: 0.15
+      });
+    } else if (preset === 'balanced') {
+      onUpdateAnalysis({
+        strokeDensity: 6,
+        fillDensity: 7,
+        edgeSensitivity: 7,
+        strokeSimplification: 1.8,
+        threshold: 80,
+        noiseReduction: 2
+      });
+      onUpdateDrawing({
+        strokeWidth: 3,
+        pressureVariation: 0.25
+      });
+    } else if (preset === 'hd') {
+      onUpdateAnalysis({
+        strokeDensity: 9,
+        fillDensity: 9,
+        edgeSensitivity: 9,
+        strokeSimplification: 1.0,
+        threshold: 50,
+        noiseReduction: 1
+      });
+      onUpdateDrawing({
+        strokeWidth: 3,
+        pressureVariation: 0.35
+      });
+    }
+  };
+
   const styleModes: { mode: DrawingStyleMode; name: string; desc: string }[] = [
     { mode: 'REALISTIC_HAND', name: 'Realistic Hand Draw', desc: 'Natural pen & hand movement with ink dynamics' },
     { mode: 'CLEAN_WHITEBOARD', name: 'Clean Whiteboard', desc: 'Smooth glossy whiteboard marker lines' },
@@ -50,6 +97,33 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
 
   return (
     <div className="w-full lg:w-80 bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 flex flex-col h-full overflow-hidden transition-colors">
+      {/* Mode Selector Header (Simple vs Advanced) */}
+      <div className="p-2 bg-slate-100 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+        <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400">Tampilan Kontrol:</span>
+        <div className="flex bg-slate-200 dark:bg-slate-800 p-0.5 rounded-lg text-[10px] font-semibold">
+          <button
+            onClick={() => setControlMode('simple')}
+            className={`px-2.5 py-1 rounded-md transition-all ${
+              controlMode === 'simple'
+                ? 'bg-indigo-600 text-white shadow-sm'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            Sederhana (Otomatis)
+          </button>
+          <button
+            onClick={() => setControlMode('advanced')}
+            className={`px-2.5 py-1 rounded-md transition-all ${
+              controlMode === 'advanced'
+                ? 'bg-indigo-600 text-white shadow-sm'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            Lanjutan (Detail)
+          </button>
+        </div>
+      </div>
+
       {/* Navigation Tabs */}
       <div className="flex items-center overflow-x-auto border-b border-slate-200 dark:border-slate-800 p-1 bg-slate-50 dark:bg-slate-950 no-scrollbar">
         <button
@@ -194,76 +268,151 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         {/* ANALYSIS TAB */}
         {activeTab === 'analysis' && (
           <div className="space-y-4">
-            <label className="flex items-center justify-between font-semibold">
-              <span>Skeletonization (Zhang-Suen Thinning)</span>
-              <input
-                type="checkbox"
-                checked={project.analysisSettings.skeletonization}
-                onChange={(e) => onUpdateAnalysis({ skeletonization: e.target.checked })}
-                className="rounded border-slate-300 dark:border-slate-700 text-indigo-600 focus:ring-indigo-500"
-              />
-            </label>
+            {/* Quick Presets Section */}
+            <div className="p-3 bg-indigo-50/60 dark:bg-indigo-950/40 border border-indigo-200/80 dark:border-indigo-800/60 rounded-xl space-y-2">
+              <span className="font-bold text-[11px] text-indigo-900 dark:text-indigo-300 block">⚡ Preset Kualitas Otomatis</span>
+              <div className="grid grid-cols-3 gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => applyPreset('fast')}
+                  className="p-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-indigo-500 text-[10px] font-semibold flex flex-col items-center text-center transition-all shadow-xs"
+                >
+                  <span className="text-xs mb-0.5">🚀</span>
+                  <span className="text-slate-800 dark:text-slate-200">Cepat</span>
+                  <span className="text-[9px] text-slate-500 font-normal">Ringan (60 FPS)</span>
+                </button>
 
-            <div>
-              <div className="flex justify-between mb-1 font-semibold">
-                <span>Sobel Threshold</span>
-                <span>{project.analysisSettings.threshold}</span>
+                <button
+                  type="button"
+                  onClick={() => applyPreset('balanced')}
+                  className="p-2 rounded-lg bg-white dark:bg-slate-800 border-2 border-indigo-500 text-[10px] font-semibold flex flex-col items-center text-center transition-all shadow-xs"
+                >
+                  <span className="text-xs mb-0.5">🎯</span>
+                  <span className="text-indigo-600 dark:text-indigo-400 font-bold">Ideal</span>
+                  <span className="text-[9px] text-slate-500 font-normal">Sangat Mirip</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => applyPreset('hd')}
+                  className="p-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-indigo-500 text-[10px] font-semibold flex flex-col items-center text-center transition-all shadow-xs"
+                >
+                  <span className="text-xs mb-0.5">💎</span>
+                  <span className="text-slate-800 dark:text-slate-200">HD Presisi</span>
+                  <span className="text-[9px] text-slate-500 font-normal">Maksimal</span>
+                </button>
               </div>
-              <input
-                type="range"
-                min={10}
-                max={220}
-                value={project.analysisSettings.threshold}
-                onChange={(e) => onUpdateAnalysis({ threshold: parseInt(e.target.value) })}
-                className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-600"
-              />
             </div>
 
             <div>
               <div className="flex justify-between mb-1 font-semibold">
-                <span>Line Sensitivity</span>
-                <span>{project.analysisSettings.edgeSensitivity}</span>
+                <span>Stroke Density / Kerapatan Garis Sketsa</span>
+                <span>{project.analysisSettings.strokeDensity ?? 6} / 10</span>
               </div>
               <input
                 type="range"
                 min={1}
                 max={10}
-                value={project.analysisSettings.edgeSensitivity}
-                onChange={(e) => onUpdateAnalysis({ edgeSensitivity: parseInt(e.target.value) })}
+                value={project.analysisSettings.strokeDensity ?? 6}
+                onChange={(e) => onUpdateAnalysis({ strokeDensity: parseInt(e.target.value) })}
                 className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-600"
               />
+              <p className="text-[10px] text-slate-500 mt-0.5">Berapa banyak garis sketsa utama yang diekstrak dari gambar referensi</p>
             </div>
 
             <div>
               <div className="flex justify-between mb-1 font-semibold">
-                <span>Noise Reduction</span>
-                <span>{project.analysisSettings.noiseReduction}</span>
+                <span>In-Paint Color Density / Kerapatan Warna Fill</span>
+                <span>{project.analysisSettings.fillDensity ?? 7} / 10</span>
               </div>
               <input
                 type="range"
-                min={0}
-                max={5}
-                value={project.analysisSettings.noiseReduction}
-                onChange={(e) => onUpdateAnalysis({ noiseReduction: parseInt(e.target.value) })}
+                min={1}
+                max={10}
+                value={project.analysisSettings.fillDensity ?? 7}
+                onChange={(e) => onUpdateAnalysis({ fillDensity: parseInt(e.target.value) })}
                 className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-600"
               />
+              <p className="text-[10px] text-slate-500 mt-0.5">Kerapatan warna isian (fill/paint) di dalam sketsa agar padat & rapat tanpa celah</p>
             </div>
 
-            <div>
-              <div className="flex justify-between mb-1 font-semibold">
-                <span>Path Simplification (RDP Tolerance)</span>
-                <span>{project.analysisSettings.strokeSimplification}</span>
+            {controlMode === 'advanced' && (
+              <div className="pt-2 border-t border-slate-200 dark:border-slate-800 space-y-4">
+                <span className="font-bold text-[11px] text-slate-500 uppercase tracking-wider block">Parametris Lanjutan</span>
+                
+                <label className="flex items-center justify-between font-semibold">
+                  <span>Skeletonization (Zhang-Suen Thinning)</span>
+                  <input
+                    type="checkbox"
+                    checked={project.analysisSettings.skeletonization}
+                    onChange={(e) => onUpdateAnalysis({ skeletonization: e.target.checked })}
+                    className="rounded border-slate-300 dark:border-slate-700 text-indigo-600 focus:ring-indigo-500"
+                  />
+                </label>
+
+                <div>
+                  <div className="flex justify-between mb-1 font-semibold">
+                    <span>Sobel Threshold (Deteksi Tepi Gradient)</span>
+                    <span>{project.analysisSettings.threshold}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={10}
+                    max={220}
+                    value={project.analysisSettings.threshold}
+                    onChange={(e) => onUpdateAnalysis({ threshold: parseInt(e.target.value) })}
+                    className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                  />
+                  <p className="text-[10px] text-slate-500 mt-0.5">Ambang batas kecerahan untuk mengabaikan bayangan halus / noise latar</p>
+                </div>
+
+                <div>
+                  <div className="flex justify-between mb-1 font-semibold">
+                    <span>Line Sensitivity (Sensitivitas Garis Tipis)</span>
+                    <span>{project.analysisSettings.edgeSensitivity}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={1}
+                    max={10}
+                    value={project.analysisSettings.edgeSensitivity}
+                    onChange={(e) => onUpdateAnalysis({ edgeSensitivity: parseInt(e.target.value) })}
+                    className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                  />
+                </div>
+
+                <div>
+                  <div className="flex justify-between mb-1 font-semibold">
+                    <span>Noise Reduction (Pembersih Bintik)</span>
+                    <span>{project.analysisSettings.noiseReduction}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={5}
+                    value={project.analysisSettings.noiseReduction}
+                    onChange={(e) => onUpdateAnalysis({ noiseReduction: parseInt(e.target.value) })}
+                    className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                  />
+                </div>
+
+                <div>
+                  <div className="flex justify-between mb-1 font-semibold">
+                    <span>Path Simplification (RDP Tolerance)</span>
+                    <span>{project.analysisSettings.strokeSimplification}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0.5}
+                    max={5.0}
+                    step={0.1}
+                    value={project.analysisSettings.strokeSimplification}
+                    onChange={(e) => onUpdateAnalysis({ strokeSimplification: parseFloat(e.target.value) })}
+                    className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                  />
+                </div>
               </div>
-              <input
-                type="range"
-                min={0.5}
-                max={5.0}
-                step={0.1}
-                value={project.analysisSettings.strokeSimplification}
-                onChange={(e) => onUpdateAnalysis({ strokeSimplification: parseFloat(e.target.value) })}
-                className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-600"
-              />
-            </div>
+            )}
           </div>
         )}
 
@@ -338,6 +487,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                 onChange={(e) => onUpdateDrawing({ strokeOrderPriority: e.target.value as any })}
                 className="w-full p-2 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-medium focus:outline-none"
               >
+                <option value="left-to-right">Left to Right Sweep (Horizontal)</option>
                 <option value="smart">Smart Natural Hand (Proximity TSP)</option>
                 <option value="length">Main Outlines First (Length)</option>
                 <option value="top-down">Top to Bottom</option>
@@ -409,7 +559,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
           <div className="space-y-4">
             <div>
               <div className="flex justify-between mb-1 font-semibold">
-                <span>Total Duration</span>
+                <span>Drawing Duration / Durasi Menggambar</span>
                 <span>{project.animationSettings.duration}s</span>
               </div>
               <input
@@ -420,6 +570,23 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                 onChange={(e) => onUpdateAnimation({ duration: parseInt(e.target.value) })}
                 className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-600"
               />
+            </div>
+
+            <div>
+              <div className="flex justify-between mb-1 font-semibold">
+                <span>Hold Delay at End / Durasi Jeda Selesai</span>
+                <span>{project.animationSettings.endDelay ?? 4.0}s</span>
+              </div>
+              <input
+                type="range"
+                min={0.5}
+                max={10.0}
+                step={0.5}
+                value={project.animationSettings.endDelay ?? 4.0}
+                onChange={(e) => onUpdateAnimation({ endDelay: parseFloat(e.target.value) })}
+                className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+              />
+              <p className="text-[10px] text-slate-500 mt-0.5">Waktu tahan/diam gambar lengkap setelah selesai digambar sebelum mengulang</p>
             </div>
 
             <div>
@@ -442,19 +609,44 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         {activeTab === 'background' && (
           <div className="space-y-4">
             <div>
-              <label className="block mb-2 font-semibold">Canvas Background Style</label>
+              <label className="block mb-2 font-semibold">Aspect Ratio Canvas Format</label>
               <div className="grid grid-cols-2 gap-2">
-                {(['white', 'black', 'paper', 'grid', 'transparent'] as const).map((bg) => (
+                {[
+                  { id: '16:9', label: '16:9 (1280x720)' },
+                  { id: 'auto', label: 'Auto (Match Image)' },
+                  { id: '4:3', label: '4:3 (1024x768)' },
+                  { id: '1:1', label: '1:1 (Square)' },
+                  { id: '9:16', label: '9:16 (720x1280)' }
+                ].map((ar) => (
                   <button
-                    key={bg}
-                    onClick={() => onUpdateBackground({ type: bg })}
-                    className={`p-2.5 rounded-xl border text-xs font-semibold capitalize transition-all ${
-                      project.backgroundSettings.type === bg
-                        ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400'
+                    key={ar.id}
+                    onClick={() => onUpdateAspectRatioPreset && onUpdateAspectRatioPreset(ar.id as any)}
+                    className={`p-2 rounded-xl border text-xs font-semibold transition-all ${
+                      (project.aspectRatioPreset || '16:9') === ar.id
+                        ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 shadow-sm'
                         : 'border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
                     }`}
                   >
-                    {bg}
+                    {ar.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block mb-2 font-semibold">Canvas Background Style</label>
+              <div className="grid grid-cols-2 gap-2">
+                {(['white', 'original', 'paper', 'grid', 'black', 'transparent'] as const).map((bg) => (
+                  <button
+                    key={bg}
+                    onClick={() => onUpdateBackground({ type: bg, originalOpacity: bg === 'original' ? 0.95 : project.backgroundSettings.originalOpacity })}
+                    className={`p-2.5 rounded-xl border text-xs font-semibold capitalize transition-all ${
+                      project.backgroundSettings.type === bg
+                        ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 font-bold'
+                        : 'border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                    }`}
+                  >
+                    {bg === 'original' ? '🎨 Full Color Original' : bg}
                   </button>
                 ))}
               </div>

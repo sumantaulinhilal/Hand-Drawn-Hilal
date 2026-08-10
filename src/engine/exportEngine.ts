@@ -69,6 +69,20 @@ export function generateAnimatedSvg(project: AnimationProject): string {
 }
 
 /**
+ * Helper to load source image for rendering background/original image layer during export
+ */
+async function loadSourceImage(sourceUrl: string): Promise<HTMLImageElement | null> {
+  if (!sourceUrl) return null;
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = sourceUrl;
+  });
+}
+
+/**
  * Renders full project frame to PNG Blob at chosen resolution (720p, 1080p, 4K)
  */
 export async function exportHighResPng(
@@ -85,6 +99,8 @@ export async function exportHighResPng(
     targetWidth = 3840;
     targetHeight = 2160;
   }
+
+  const originalImg = await loadSourceImage(project.sourceUrl);
 
   const canvas = document.createElement('canvas');
   canvas.width = targetWidth;
@@ -105,6 +121,11 @@ export async function exportHighResPng(
     project.animationSettings.easing
   );
 
+  const exportBackgroundSettings = {
+    ...project.backgroundSettings,
+    originalOpacity: project.backgroundSettings.type === 'original' ? project.backgroundSettings.originalOpacity : 0
+  };
+
   renderCanvasFrame(
     ctx,
     targetWidth,
@@ -112,7 +133,7 @@ export async function exportHighResPng(
     frameState,
     project.styleMode,
     project.drawingSettings,
-    project.backgroundSettings,
+    exportBackgroundSettings,
     {
       showOriginal: false,
       showDrawingPath: false,
@@ -122,7 +143,9 @@ export async function exportHighResPng(
       showStrokeNumbers: false,
       selectedStrokeId: null,
       activeTab: 'animation'
-    }
+    },
+    originalImg || undefined,
+    { width: project.originalWidth || 1280, height: project.originalHeight || 720 }
   );
 
   return new Promise((resolve) => {
@@ -141,6 +164,8 @@ export async function exportWebmVideo(
   const targetWidth = options.quality === '4k' ? 3840 : options.quality === '720p' ? 1280 : 1920;
   const targetHeight = options.quality === '4k' ? 2160 : options.quality === '720p' ? 720 : 1080;
 
+  const originalImg = await loadSourceImage(project.sourceUrl);
+
   const canvas = document.createElement('canvas');
   canvas.width = targetWidth;
   canvas.height = targetHeight;
@@ -153,11 +178,22 @@ export async function exportWebmVideo(
     project.drawingSettings.concurrentStrokes
   );
 
-  const stream = canvas.captureStream(options.fps || 30);
+  const fps = options.fps || 60;
+  // Use manual frame rate capture stream (0 FPS) so every rendered frame is explicitly requested and encoded
+  const stream = canvas.captureStream(0);
+  const videoTrack = stream.getVideoTracks()[0] as MediaStreamTrack & { requestFrame?: () => void };
+
+  let mimeType = 'video/webm;codecs=vp9';
+  if (!MediaRecorder.isTypeSupported(mimeType)) {
+    mimeType = 'video/webm;codecs=vp8';
+  }
+  if (!MediaRecorder.isTypeSupported(mimeType)) {
+    mimeType = 'video/webm';
+  }
+
   const mediaRecorder = new MediaRecorder(stream, {
-    mimeType: MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
-      ? 'video/webm;codecs=vp9'
-      : 'video/webm'
+    mimeType,
+    videoBitsPerSecond: 16_000_000 // 16 Mbps for crisp, ultra-smooth HD video
   });
 
   const chunks: Blob[] = [];
@@ -165,55 +201,79 @@ export async function exportWebmVideo(
     if (e.data.size > 0) chunks.push(e.data);
   };
 
+  const exportBackgroundSettings = {
+    ...project.backgroundSettings,
+    originalOpacity: project.backgroundSettings.type === 'original' ? project.backgroundSettings.originalOpacity : 0
+  };
+
   return new Promise((resolve) => {
     mediaRecorder.onstop = () => {
-      const blob = new Blob(chunks, { type: 'video/webm' });
+      const blob = new Blob(chunks, { type: mimeType });
       resolve(blob);
     };
 
-    mediaRecorder.start();
+    mediaRecorder.start(100);
 
-    const totalFrames = Math.ceil(computedTotalDuration * options.fps);
-    let currentFrame = 0;
+    const totalFrames = Math.max(1, Math.ceil(computedTotalDuration * fps));
+    const frameDelayMs = Math.round(1000 / fps);
 
-    const frameInterval = setInterval(() => {
-      if (currentFrame > totalFrames) {
-        clearInterval(frameInterval);
-        mediaRecorder.stop();
-        return;
+    const exportAsyncLoop = async () => {
+      for (let currentFrame = 0; currentFrame <= totalFrames; currentFrame++) {
+        const currentTime = (currentFrame / totalFrames) * computedTotalDuration;
+        const frameState = evaluateAnimationFrame(
+          currentTime,
+          scheduledStrokes,
+          computedTotalDuration,
+          project.animationSettings.easing
+        );
+
+        renderCanvasFrame(
+          ctx,
+          targetWidth,
+          targetHeight,
+          frameState,
+          project.styleMode,
+          { ...project.drawingSettings, showHandCursor: options.includeHandCursor },
+          exportBackgroundSettings,
+          {
+            showOriginal: false,
+            showDrawingPath: false,
+            showSkeleton: false,
+            showEdges: false,
+            showNodes: false,
+            showStrokeNumbers: false,
+            selectedStrokeId: null,
+            activeTab: 'animation'
+          },
+          originalImg || undefined,
+          { width: project.originalWidth || 1280, height: project.originalHeight || 720 }
+        );
+
+        if (videoTrack && typeof videoTrack.requestFrame === 'function') {
+          videoTrack.requestFrame();
+        }
+
+        onProgress(Math.min(100, Math.round((currentFrame / totalFrames) * 100)));
+
+        // Micro tick delay to yield main thread and guarantee MediaRecorder encodes frame cleanly
+        await new Promise((r) => setTimeout(r, frameDelayMs));
       }
 
-      const currentTime = (currentFrame / totalFrames) * computedTotalDuration;
-      const frameState = evaluateAnimationFrame(
-        currentTime,
-        scheduledStrokes,
-        computedTotalDuration,
-        project.animationSettings.easing
-      );
-
-      renderCanvasFrame(
-        ctx,
-        targetWidth,
-        targetHeight,
-        frameState,
-        project.styleMode,
-        { ...project.drawingSettings, showHandCursor: options.includeHandCursor },
-        project.backgroundSettings,
-        {
-          showOriginal: false,
-          showDrawingPath: false,
-          showSkeleton: false,
-          showEdges: false,
-          showNodes: false,
-          showStrokeNumbers: false,
-          selectedStrokeId: null,
-          activeTab: 'animation'
+      // Add a clean hold frames at the end
+      const holdFrames = Math.ceil(fps * (project.animationSettings.endDelay || 0.8));
+      for (let h = 0; h < holdFrames; h++) {
+        if (videoTrack && typeof videoTrack.requestFrame === 'function') {
+          videoTrack.requestFrame();
         }
-      );
+        await new Promise((r) => setTimeout(r, frameDelayMs));
+      }
 
-      currentFrame++;
-      onProgress(Math.round((currentFrame / totalFrames) * 100));
-    }, 1000 / options.fps);
+      setTimeout(() => {
+        mediaRecorder.stop();
+      }, 250);
+    };
+
+    exportAsyncLoop();
   });
 }
 
@@ -231,6 +291,8 @@ export async function exportZipFrames(
   const targetWidth = 1280;
   const targetHeight = 720;
 
+  const originalImg = await loadSourceImage(project.sourceUrl);
+
   const canvas = document.createElement('canvas');
   canvas.width = targetWidth;
   canvas.height = targetHeight;
@@ -246,6 +308,11 @@ export async function exportZipFrames(
   const fps = 24;
   const totalFrames = Math.ceil(computedTotalDuration * fps);
 
+  const exportBackgroundSettings = {
+    ...project.backgroundSettings,
+    originalOpacity: project.backgroundSettings.type === 'original' ? project.backgroundSettings.originalOpacity : 0
+  };
+
   for (let f = 0; f <= totalFrames; f++) {
     const t = (f / totalFrames) * computedTotalDuration;
     const frameState = evaluateAnimationFrame(t, scheduledStrokes, computedTotalDuration, project.animationSettings.easing);
@@ -257,7 +324,7 @@ export async function exportZipFrames(
       frameState,
       project.styleMode,
       project.drawingSettings,
-      project.backgroundSettings,
+      exportBackgroundSettings,
       {
         showOriginal: false,
         showDrawingPath: false,
@@ -267,7 +334,9 @@ export async function exportZipFrames(
         showStrokeNumbers: false,
         selectedStrokeId: null,
         activeTab: 'animation'
-      }
+      },
+      originalImg || undefined,
+      { width: project.originalWidth || 1280, height: project.originalHeight || 720 }
     );
 
     const frameDataUrl = canvas.toDataURL('image/png').replace(/^data:image\/png;base64,/, '');

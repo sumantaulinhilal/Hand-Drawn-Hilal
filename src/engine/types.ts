@@ -48,6 +48,8 @@ export interface AnalysisSettings {
   skeletonization: boolean; // Enable Zhang-Suen thinning
   strokeSimplification: number; // 0.5 to 5.0 (tolerance for Ramer-Douglas-Peucker)
   minStrokeLength: number; // min pixels to keep as stroke
+  strokeDensity: number; // 1 to 10 (Stroke / Sketch Density control)
+  fillDensity: number; // 1 to 10 (Color Fill / In-Paint Density control)
   invert: boolean;
   autoTraceSvg: boolean;
 }
@@ -60,7 +62,7 @@ export interface DrawingSettings {
   smoothness: number; // 0 to 5
   handJitter: number; // 0 to 10
   naturalVariation: number; // 0 to 10
-  strokeOrderPriority: 'smart' | 'length' | 'top-down' | 'bottom-up' | 'outside-in';
+  strokeOrderPriority: 'left-to-right' | 'smart' | 'length' | 'top-down' | 'bottom-up' | 'outside-in';
   showHandCursor: boolean;
   handType: 'pen' | 'pencil' | 'marker' | 'whiteboard-marker';
   concurrentStrokes: number; // 1 to 4 hands/pens drawing together
@@ -112,6 +114,7 @@ export interface AnimationProject {
   originalWidth: number;
   originalHeight: number;
   aspectRatio: number;
+  aspectRatioPreset?: '16:9' | '4:3' | '1:1' | '9:16' | 'auto';
   strokes: Stroke[];
   analysisSettings: AnalysisSettings;
   drawingSettings: DrawingSettings;

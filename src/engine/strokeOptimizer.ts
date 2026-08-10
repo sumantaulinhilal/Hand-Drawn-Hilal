@@ -6,6 +6,29 @@
 import { DrawingSettings, Point, Stroke } from './types';
 
 /**
+ * Gaussian moving average filter to remove micro pixel jitter
+ */
+export function removePixelJitter(points: Point[]): Point[] {
+  if (points.length <= 3) return points;
+  const smoothed: Point[] = [points[0]];
+
+  for (let i = 1; i < points.length - 1; i++) {
+    const prev = points[i - 1];
+    const curr = points[i];
+    const next = points[i + 1];
+
+    smoothed.push({
+      x: 0.22 * prev.x + 0.56 * curr.x + 0.22 * next.x,
+      y: 0.22 * prev.y + 0.56 * curr.y + 0.22 * next.y,
+      pressure: 0.22 * (prev.pressure || 1) + 0.56 * (curr.pressure || 1) + 0.22 * (next.pressure || 1)
+    });
+  }
+
+  smoothed.push(points[points.length - 1]);
+  return smoothed;
+}
+
+/**
  * Chaikin's corner cutting algorithm for path smoothing
  */
 export function smoothPoints(points: Point[], iterations: number): Point[] {
@@ -42,27 +65,31 @@ export function smoothPoints(points: Point[], iterations: number): Point[] {
  * Injects subtle human hand jitter, natural pressure curves, and velocity variations.
  */
 export function optimizeStroke(stroke: Stroke, settings: DrawingSettings): Stroke {
-  // 1. Smooth path points
-  let processedPoints = smoothPoints(stroke.points, settings.smoothness);
+  // 1. First pass: Remove raw pixel staircase jitter
+  let processedPoints = removePixelJitter(stroke.points);
 
-  // 2. Add subtle human hand jitter if jitter > 0
+  // 2. Second pass: Chaikin corner cutting smoothing
+  const smoothPasses = Math.max(1, settings.smoothness || 3);
+  processedPoints = smoothPoints(processedPoints, smoothPasses);
+
+  // 3. Add subtle natural organic variation ONLY if jitter explicitly configured > 0
   if (settings.handJitter > 0) {
-    const jitterFactor = settings.handJitter * 0.4;
+    const jitterFactor = settings.handJitter * 0.05;
     processedPoints = processedPoints.map((pt, idx) => {
       // Keep start and end points anchored for clean joins
       if (idx === 0 || idx === processedPoints.length - 1) return pt;
 
-      const noiseX = (Math.random() - 0.5) * jitterFactor;
-      const noiseY = (Math.random() - 0.5) * jitterFactor;
+      const waveX = Math.sin(idx * 0.2) * jitterFactor;
+      const waveY = Math.cos(idx * 0.2) * jitterFactor;
       return {
-        x: pt.x + noiseX,
-        y: pt.y + noiseY,
+        x: pt.x + waveX,
+        y: pt.y + waveY,
         pressure: pt.pressure
       };
     });
   }
 
-  // 3. Pressure dynamics: simulated pen pressure tapering at start/end, heavier in middle
+  // 4. Pressure dynamics: simulated pen pressure tapering at start/end
   if (settings.pressureVariation > 0) {
     const totalPts = processedPoints.length;
     processedPoints = processedPoints.map((pt, idx) => {
@@ -71,7 +98,7 @@ export function optimizeStroke(stroke: Stroke, settings: DrawingSettings): Strok
       const pressureMult = Math.sin(progress * Math.PI) * settings.pressureVariation + (1 - settings.pressureVariation);
       return {
         ...pt,
-        pressure: Math.max(0.2, Math.min(1.5, pressureMult))
+        pressure: Math.max(0.3, Math.min(1.4, pressureMult))
       };
     });
   }

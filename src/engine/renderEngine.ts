@@ -6,115 +6,87 @@
 import { AnimationFrameState } from './animationEngine';
 import { BackgroundSettings, DrawingSettings, DrawingStyleMode, Stroke, ViewSettings } from './types';
 
+const realHandPhotoUrl = new URL('../assets/images/real_hand_marker_1786268856778.jpg', import.meta.url).href;
+
+let cachedHandPhotoCanvas: HTMLCanvasElement | null = null;
+let rawHandImage: HTMLImageElement | null = null;
+let isHandPhotoLoading = false;
+
+// Offscreen Completed Strokes Cache for 60 FPS smooth rendering
+let offscreenCacheCanvas: HTMLCanvasElement | null = null;
+let offscreenCacheCtx: CanvasRenderingContext2D | null = null;
+let lastCachedStrokeCount = 0;
+let lastCacheConfigKey = '';
+
+function getProcessedRealHandCanvas(): HTMLCanvasElement | HTMLImageElement | null {
+  if (cachedHandPhotoCanvas) return cachedHandPhotoCanvas;
+
+  if (!isHandPhotoLoading) {
+    isHandPhotoLoading = true;
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      rawHandImage = img;
+      const cvs = document.createElement('canvas');
+      cvs.width = img.naturalWidth;
+      cvs.height = img.naturalHeight;
+      const ctx = cvs.getContext('2d');
+      if (!ctx) return;
+
+      ctx.drawImage(img, 0, 0);
+      const imgData = ctx.getImageData(0, 0, cvs.width, cvs.height);
+      const data = imgData.data;
+
+      // Chroma-key white/light background to make it transparent
+      for (let i = 0; i < data.length; i += 4) {
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+
+        if (r > 210 && g > 210 && b > 210) {
+          const minC = Math.min(r, g, b);
+          const alpha = Math.max(0, 255 - (minC - 195) * 12);
+          data[i + 3] = Math.min(data[i + 3], Math.round(alpha));
+        }
+      }
+
+      ctx.putImageData(imgData, 0, 0);
+      cachedHandPhotoCanvas = cvs;
+    };
+    img.src = realHandPhotoUrl;
+  }
+
+  return rawHandImage;
+}
+
 /**
- * Draws a realistic hand holding a pen/pencil/marker at (x, y)
+ * Draws a realistic photo hand holding a marker at (x, y)
  */
 export function drawHandCursor(
   ctx: CanvasRenderingContext2D,
   x: number,
   y: number,
   angle: number,
-  handType: DrawingSettings['handType'] = 'pen'
+  _handType: DrawingSettings['handType'] = 'pen'
 ) {
+  const handElement = getProcessedRealHandCanvas();
+  if (!handElement) return;
+
   ctx.save();
   ctx.translate(x, y);
-  // Rotate hand slightly based on stroke direction
-  const rotRad = (angle + 45) * (Math.PI / 180);
-  ctx.rotate(rotRad * 0.25);
 
-  // Pen body vector graphics offset
-  ctx.save();
-  ctx.rotate(-Math.PI / 4);
+  const angleRad = (angle * Math.PI) / 180;
+  const normAngle = Math.atan2(Math.sin(angleRad), Math.cos(angleRad)) * (180 / Math.PI);
+  const wristOscillation = Math.max(-4, Math.min(4, normAngle * 0.03));
+  
+  ctx.rotate((wristOscillation * Math.PI) / 180);
 
-  if (handType === 'pencil') {
-    // Hexagonal Yellow Pencil
-    ctx.fillStyle = '#f59e0b';
-    ctx.fillRect(-4, -60, 8, 50);
-    // Wood tip
-    ctx.fillStyle = '#fde68a';
-    ctx.beginPath();
-    ctx.moveTo(-4, -10);
-    ctx.lineTo(4, -10);
-    ctx.lineTo(0, 0);
-    ctx.closePath();
-    ctx.fill();
-    // Graphite tip
-    ctx.fillStyle = '#334155';
-    ctx.beginPath();
-    ctx.moveTo(-1.5, -3.75);
-    ctx.lineTo(1.5, -3.75);
-    ctx.lineTo(0, 0);
-    ctx.closePath();
-    ctx.fill();
-    // Eraser band
-    ctx.fillStyle = '#94a3b8';
-    ctx.fillRect(-4, -65, 8, 5);
-    ctx.fillStyle = '#f43f5e';
-    ctx.fillRect(-4, -72, 8, 7);
-  } else if (handType === 'marker' || handType === 'whiteboard-marker') {
-    // Thick Whiteboard / Permanent Marker Body
-    ctx.fillStyle = handType === 'whiteboard-marker' ? '#0284c7' : '#0f172a';
-    ctx.fillRect(-6, -70, 12, 60);
-    ctx.fillStyle = '#38bdf8';
-    ctx.fillRect(-6, -20, 12, 6);
-    // Chisel tip
-    ctx.fillStyle = '#0f172a';
-    ctx.beginPath();
-    ctx.moveTo(-4, -10);
-    ctx.lineTo(4, -10);
-    ctx.lineTo(1, 0);
-    ctx.lineTo(-2, 0);
-    ctx.closePath();
-    ctx.fill();
-  } else {
-    // Elegant Black Fountain Pen
-    ctx.fillStyle = '#1e293b';
-    ctx.beginPath();
-    ctx.roundRect(-4, -75, 8, 65, [4, 4, 0, 0]);
-    ctx.fill();
-    // Gold clip & accent
-    ctx.fillStyle = '#eab308';
-    ctx.fillRect(-4, -60, 8, 3);
-    ctx.fillRect(2, -70, 2, 25);
-    // Nib
-    ctx.fillStyle = '#eab308';
-    ctx.beginPath();
-    ctx.moveTo(-3, -10);
-    ctx.lineTo(3, -10);
-    ctx.lineTo(0, 0);
-    ctx.closePath();
-    ctx.fill();
-  }
+  const drawW = 340;
+  const drawH = 340;
+  const tipX = drawW * 0.13;
+  const tipY = drawH * 0.12;
 
-  ctx.restore();
-
-  // Hand Shadow
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
-  ctx.beginPath();
-  ctx.ellipse(25, 35, 18, 12, Math.PI / 4, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Hand / Fingers Silhouette (Realistic hand overlay)
-  ctx.fillStyle = '#fbcfe8'; // Soft skin tone
-  ctx.strokeStyle = '#f472b6';
-  ctx.lineWidth = 1.5;
-
-  // Index finger gripping pen
-  ctx.beginPath();
-  ctx.ellipse(12, 18, 10, 16, Math.PI / 3, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.stroke();
-
-  // Thumb gripping pen
-  ctx.beginPath();
-  ctx.ellipse(20, 28, 12, 18, -Math.PI / 6, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.stroke();
-
-  // Knuckle / Palm arc
-  ctx.beginPath();
-  ctx.arc(38, 45, 22, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.drawImage(handElement, -tipX, -tipY, drawW, drawH);
 
   ctx.restore();
 }
@@ -131,12 +103,13 @@ export function renderCanvasFrame(
   drawingSettings: DrawingSettings,
   backgroundSettings: BackgroundSettings,
   viewSettings: ViewSettings,
-  originalImage?: HTMLImageElement | HTMLCanvasElement
+  originalImage?: HTMLImageElement | HTMLCanvasElement,
+  projectDimensions?: { width: number; height: number }
 ) {
   ctx.save();
   ctx.clearRect(0, 0, canvasWidth, canvasHeight);
 
-  // 1. Draw Background
+  // 1. Draw Canvas Background
   if (backgroundSettings.type === 'white') {
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvasWidth, canvasHeight);
@@ -162,147 +135,221 @@ export function renderCanvasFrame(
       ctx.stroke();
     }
   } else if (backgroundSettings.type === 'paper') {
-    ctx.fillStyle = '#fef3c7'; // Cream paper color
+    ctx.fillStyle = '#fef3c7';
     ctx.fillRect(0, 0, canvasWidth, canvasHeight);
   } else if (backgroundSettings.type === 'custom') {
     ctx.fillStyle = backgroundSettings.customColor || '#ffffff';
     ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+  } else {
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
   }
 
-  // 2. Draw Original Reference Image if enabled
-  if (viewSettings.showOriginal && originalImage) {
-    ctx.save();
-    ctx.globalAlpha = backgroundSettings.originalOpacity;
-    const aspect = originalImage.width / originalImage.height;
-    let drawW = canvasWidth;
-    let drawH = canvasHeight;
-    let offX = 0;
-    let offY = 0;
-    if (aspect > canvasWidth / canvasHeight) {
-      drawH = canvasWidth / aspect;
-      offY = (canvasHeight - drawH) / 2;
+  // Calculate Fit-Screen Scaling and Centering Matrix
+  const projW = projectDimensions?.width || 1280;
+  const projH = projectDimensions?.height || 720;
+
+  const scaleX = canvasWidth / projW;
+  const scaleY = canvasHeight / projH;
+  const fitScale = Math.min(scaleX, scaleY);
+
+  const offsetX = (canvasWidth - projW * fitScale) / 2;
+  const offsetY = (canvasHeight - projH * fitScale) / 2;
+
+  ctx.save();
+  ctx.translate(offsetX, offsetY);
+  ctx.scale(fitScale, fitScale);
+
+  // 2. Draw Original Reference Image / Full Color Fills
+  const isOriginalBg = backgroundSettings.type === 'original';
+
+  if (originalImage) {
+    let alpha = 0;
+    if (viewSettings.showOriginal) {
+      alpha = 1.0;
+    } else if (isOriginalBg) {
+      alpha = backgroundSettings.originalOpacity ?? 1.0;
+    } else if ((backgroundSettings.originalOpacity ?? 0) > 0) {
+      alpha = backgroundSettings.originalOpacity;
     } else {
-      drawW = canvasHeight * aspect;
-      offX = (canvasWidth - drawW) / 2;
+      // Smoothly fade in original reference image only right at drawing completion (from drawingProgress 0.92 to 1.0)
+      const prog = frameState.drawingProgress ?? frameState.overallProgress;
+      if (prog > 0.92) {
+        alpha = Math.min(1.0, (prog - 0.92) / 0.08);
+      }
     }
-    ctx.drawImage(originalImage, offX, offY, drawW, drawH);
-    ctx.restore();
+
+    if (alpha > 0) {
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+      ctx.drawImage(originalImage, 0, 0, projW, projH);
+      ctx.restore();
+    }
   }
+
+  // Helper to draw smooth quadratic curve path through points
+  const drawSmoothPathPoints = (targetCtx: CanvasRenderingContext2D, pts: { x: number; y: number }[]) => {
+    if (pts.length < 2) return;
+    if (pts.length === 2) {
+      targetCtx.moveTo(pts[0].x, pts[0].y);
+      targetCtx.lineTo(pts[1].x, pts[1].y);
+      return;
+    }
+
+    targetCtx.moveTo(pts[0].x, pts[0].y);
+    let i = 1;
+    for (; i < pts.length - 1; i++) {
+      const midX = (pts[i].x + pts[i + 1].x) / 2;
+      const midY = (pts[i].y + pts[i + 1].y) / 2;
+      targetCtx.quadraticCurveTo(pts[i].x, pts[i].y, midX, midY);
+    }
+    targetCtx.lineTo(pts[i].x, pts[i].y);
+  };
 
   // 3. Helper to draw a single stroke given style settings
   const drawStrokeSegment = (
+    targetCtx: CanvasRenderingContext2D,
     stroke: Stroke,
-    points: { x: number; y: number; pressure?: number }[],
-    isComplete: boolean
+    points: { x: number; y: number; pressure?: number }[]
   ) => {
     if (points.length < 2) return;
 
-    ctx.save();
+    targetCtx.save();
     const baseColor = stroke.color || '#1e293b';
-    const baseWidth = (stroke.width || drawingSettings.strokeWidth) * (drawingSettings.strokeWidth / 3);
+    const widthScale = drawingSettings.strokeWidth / 3;
+    const rawWidth = stroke.width || drawingSettings.strokeWidth;
+    const baseWidth = stroke.layer === 'fill' 
+      ? Math.max(2, Math.min(rawWidth, rawWidth * widthScale))
+      : rawWidth * widthScale;
 
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
+    targetCtx.lineCap = 'round';
+    targetCtx.lineJoin = 'round';
 
     if (styleMode === 'PENCIL_SKETCH') {
-      // Textured graphite pencil effect
-      ctx.strokeStyle = 'rgba(30, 41, 59, 0.7)';
-      ctx.lineWidth = Math.max(1, baseWidth * 0.8);
+      targetCtx.strokeStyle = 'rgba(30, 41, 59, 0.7)';
+      targetCtx.lineWidth = Math.max(1, baseWidth * 0.8);
 
-      ctx.beginPath();
-      ctx.moveTo(points[0].x, points[0].y);
-      for (let i = 1; i < points.length; i++) {
-        ctx.lineTo(points[i].x, points[i].y);
-      }
-      ctx.stroke();
+      targetCtx.beginPath();
+      drawSmoothPathPoints(targetCtx, points);
+      targetCtx.stroke();
 
-      // Secondary sketch offset line for pencil feel
-      ctx.strokeStyle = 'rgba(51, 65, 85, 0.35)';
-      ctx.lineWidth = Math.max(0.8, baseWidth * 0.5);
-      ctx.beginPath();
-      ctx.moveTo(points[0].x + 0.8, points[0].y - 0.5);
-      for (let i = 1; i < points.length; i++) {
-        ctx.lineTo(points[i].x + 0.8, points[i].y - 0.5);
-      }
-      ctx.stroke();
+      targetCtx.strokeStyle = 'rgba(51, 65, 85, 0.35)';
+      targetCtx.lineWidth = Math.max(0.8, baseWidth * 0.5);
+      targetCtx.beginPath();
+      const offsetPts = points.map(p => ({ x: p.x + 0.8, y: p.y - 0.5 }));
+      drawSmoothPathPoints(targetCtx, offsetPts);
+      targetCtx.stroke();
     } else if (styleMode === 'MARKER') {
-      // Bold marker with slight opacity overlap
-      ctx.globalAlpha = 0.85;
-      ctx.strokeStyle = baseColor;
-      ctx.lineWidth = baseWidth * 1.8;
-      ctx.beginPath();
-      ctx.moveTo(points[0].x, points[0].y);
-      for (let i = 1; i < points.length; i++) {
-        ctx.lineTo(points[i].x, points[i].y);
-      }
-      ctx.stroke();
+      targetCtx.globalAlpha = 0.85;
+      targetCtx.strokeStyle = baseColor;
+      targetCtx.lineWidth = baseWidth * 1.8;
+      targetCtx.beginPath();
+      drawSmoothPathPoints(targetCtx, points);
+      targetCtx.stroke();
     } else if (styleMode === 'CLEAN_WHITEBOARD') {
-      // Smooth whiteboard marker
-      ctx.globalAlpha = 0.95;
-      ctx.strokeStyle = baseColor === '#ffffff' ? '#2563eb' : baseColor;
-      ctx.lineWidth = baseWidth * 1.4;
-      ctx.beginPath();
-      ctx.moveTo(points[0].x, points[0].y);
-      for (let i = 1; i < points.length; i++) {
-        ctx.lineTo(points[i].x, points[i].y);
-      }
-      ctx.stroke();
+      targetCtx.globalAlpha = 0.95;
+      targetCtx.strokeStyle = baseColor === '#ffffff' ? '#2563eb' : baseColor;
+      targetCtx.lineWidth = baseWidth * 1.4;
+      targetCtx.beginPath();
+      drawSmoothPathPoints(targetCtx, points);
+      targetCtx.stroke();
     } else if (styleMode === 'INK' || styleMode === 'REALISTIC_HAND' || styleMode === 'AUTO') {
-      // Variable pressure ink stroke
-      ctx.globalAlpha = stroke.opacity * drawingSettings.strokeOpacity;
-      ctx.strokeStyle = baseColor;
+      targetCtx.globalAlpha = stroke.opacity * drawingSettings.strokeOpacity;
+      targetCtx.strokeStyle = baseColor;
 
-      for (let i = 1; i < points.length; i++) {
-        const p1 = points[i - 1];
-        const p2 = points[i];
-        const pressure = (p2.pressure || 1) * (drawingSettings.pressureVariation * 0.5 + 0.75);
+      if (!drawingSettings.pressureVariation || drawingSettings.pressureVariation < 0.1) {
+        targetCtx.lineWidth = baseWidth;
+        targetCtx.beginPath();
+        drawSmoothPathPoints(targetCtx, points);
+        targetCtx.stroke();
+      } else {
+        let currentWidth = Math.max(1, baseWidth * ((points[0].pressure || 1) * (drawingSettings.pressureVariation * 0.5 + 0.75)));
+        targetCtx.lineWidth = currentWidth;
+        targetCtx.beginPath();
+        targetCtx.moveTo(points[0].x, points[0].y);
 
-        ctx.lineWidth = Math.max(1, baseWidth * pressure);
-        ctx.beginPath();
-        ctx.moveTo(p1.x, p1.y);
-        ctx.lineTo(p2.x, p2.y);
-        ctx.stroke();
+        for (let i = 1; i < points.length; i++) {
+          const pressure = (points[i].pressure || 1) * (drawingSettings.pressureVariation * 0.5 + 0.75);
+          const w = Math.max(1, baseWidth * pressure);
+
+          if (Math.abs(w - currentWidth) > 0.5) {
+            targetCtx.lineTo(points[i].x, points[i].y);
+            targetCtx.stroke();
+            targetCtx.beginPath();
+            targetCtx.moveTo(points[i].x, points[i].y);
+            targetCtx.lineWidth = w;
+            currentWidth = w;
+          } else {
+            targetCtx.lineTo(points[i].x, points[i].y);
+          }
+        }
+        targetCtx.stroke();
       }
     } else {
       // VECTOR_PRECISE
-      ctx.globalAlpha = stroke.opacity * drawingSettings.strokeOpacity;
-      ctx.strokeStyle = baseColor;
-      ctx.lineWidth = baseWidth;
-      ctx.beginPath();
-      ctx.moveTo(points[0].x, points[0].y);
-      for (let i = 1; i < points.length; i++) {
-        ctx.lineTo(points[i].x, points[i].y);
-      }
-      ctx.stroke();
+      targetCtx.globalAlpha = stroke.opacity * drawingSettings.strokeOpacity;
+      targetCtx.strokeStyle = baseColor;
+      targetCtx.lineWidth = baseWidth;
+      targetCtx.beginPath();
+      drawSmoothPathPoints(targetCtx, points);
+      targetCtx.stroke();
     }
 
-    ctx.restore();
+    targetCtx.restore();
   };
 
-  // 4. Render Completed Strokes
-  for (const stroke of frameState.completedStrokes) {
-    drawStrokeSegment(stroke, stroke.points, true);
+  // 4. Render Completed Strokes using Offscreen Canvas Cache for 60 FPS smooth animation
+  const currentConfigKey = `${projW}x${projH}_${styleMode}_${drawingSettings.strokeWidth}_${drawingSettings.strokeOpacity}_${drawingSettings.pressureVariation}`;
+
+  if (
+    !offscreenCacheCanvas ||
+    offscreenCacheCanvas.width !== projW ||
+    offscreenCacheCanvas.height !== projH ||
+    lastCacheConfigKey !== currentConfigKey
+  ) {
+    offscreenCacheCanvas = document.createElement('canvas');
+    offscreenCacheCanvas.width = projW;
+    offscreenCacheCanvas.height = projH;
+    offscreenCacheCtx = offscreenCacheCanvas.getContext('2d');
+    lastCachedStrokeCount = 0;
+    lastCacheConfigKey = currentConfigKey;
   }
 
-  // 5. Render Active Strokes
+  // If completed strokes reset or rewound, clear offscreen cache
+  if (frameState.completedStrokes.length < lastCachedStrokeCount) {
+    offscreenCacheCtx?.clearRect(0, 0, projW, projH);
+    lastCachedStrokeCount = 0;
+  }
+
+  // Bake newly completed strokes onto offscreen canvas incrementally
+  if (offscreenCacheCtx && frameState.completedStrokes.length > lastCachedStrokeCount) {
+    for (let i = lastCachedStrokeCount; i < frameState.completedStrokes.length; i++) {
+      const stroke = frameState.completedStrokes[i];
+      drawStrokeSegment(offscreenCacheCtx, stroke, stroke.points);
+    }
+    lastCachedStrokeCount = frameState.completedStrokes.length;
+  }
+
+  // Draw cached completed strokes onto main canvas in 1 ultra-fast drawImage call
+  if (offscreenCacheCanvas && lastCachedStrokeCount > 0) {
+    ctx.drawImage(offscreenCacheCanvas, 0, 0);
+  }
+
+  // 5. Render Active Strokes on top
   for (const activeState of frameState.activeStrokes) {
-    drawStrokeSegment(activeState.stroke, activeState.visiblePoints, false);
+    drawStrokeSegment(ctx, activeState.stroke, activeState.visiblePoints);
   }
 
   // 6. Render Drawing Path Debug Overlay if enabled
   if (viewSettings.showDrawingPath) {
     ctx.save();
-
-    // Render all stroke paths with distinct color sequence
     const colorList = ['#ef4444', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4'];
-
     const allStrokes = [...frameState.completedStrokes, ...frameState.activeStrokes.map((a) => a.stroke)];
 
     allStrokes.forEach((stroke, idx) => {
       const isSelected = viewSettings.selectedStrokeId === stroke.id;
       const pathColor = isSelected ? '#eab308' : colorList[idx % colorList.length];
 
-      // Draw vector stroke path
       ctx.strokeStyle = pathColor;
       ctx.lineWidth = isSelected ? 4 : 2;
       ctx.setLineDash(isSelected ? [] : [4, 4]);
@@ -314,17 +361,14 @@ export function renderCanvasFrame(
       }
       ctx.stroke();
 
-      // Start node handle (Green dot)
       ctx.fillStyle = '#10b981';
       ctx.beginPath();
       ctx.arc(stroke.startPoint.x, stroke.startPoint.y, isSelected ? 6 : 4, 0, Math.PI * 2);
       ctx.fill();
 
-      // End node handle (Red square)
       ctx.fillStyle = '#ef4444';
       ctx.fillRect(stroke.endPoint.x - (isSelected ? 5 : 3), stroke.endPoint.y - (isSelected ? 5 : 3), isSelected ? 10 : 6, isSelected ? 10 : 6);
 
-      // Stroke index badge
       if (viewSettings.showStrokeNumbers) {
         ctx.fillStyle = isSelected ? '#eab308' : '#0f172a';
         ctx.font = 'bold 11px sans-serif';
@@ -350,5 +394,6 @@ export function renderCanvasFrame(
     }
   }
 
+  ctx.restore();
   ctx.restore();
 }

@@ -61,21 +61,20 @@ export function detectEdges(
   const edgeImageData = new ImageData(width, height);
   const dst = edgeImageData.data;
 
-  // Sobel Kernels
-  // Gx = [[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]]
-  // Gy = [[-1, -2, -1], [0, 0, 0], [1, 2, 1]]
-
-  // Adjust sensitivity threshold
-  const baseThreshold = settings.threshold; // default e.g. 128
-  const sensitivityScale = (11 - settings.edgeSensitivity) * 12; // lower sensitivity scale = lower threshold = detect more subtle edges
-  const effectiveThreshold = Math.max(15, baseThreshold - (10 - settings.edgeSensitivity) * 15);
+  // Sobel Kernels & Color Gradient Magnitude
+  const baseThreshold = settings.threshold;
+  const strokeDensity = settings.strokeDensity ?? 6;
+  const densityScale = Math.max(0.4, strokeDensity / 6);
+  const effectiveThreshold = Math.max(8, (baseThreshold - (10 - settings.edgeSensitivity) * 14) / densityScale);
 
   let edgeCount = 0;
+  const borderMargin = 6;
 
-  for (let y = 1; y < height - 1; y++) {
-    for (let x = 1; x < width - 1; x++) {
+  for (let y = borderMargin; y < height - borderMargin; y++) {
+    for (let x = borderMargin; x < width - borderMargin; x++) {
       const idx = y * width + x;
 
+      // 3x3 Grayscale Sobel
       const p0 = blurred[(y - 1) * width + (x - 1)];
       const p1 = blurred[(y - 1) * width + x];
       const p2 = blurred[(y - 1) * width + (x + 1)];
@@ -90,25 +89,41 @@ export function detectEdges(
       const gx = (-1 * p0) + (1 * p2) + (-2 * p3) + (2 * p5) + (-1 * p6) + (1 * p8);
       const gy = (-1 * p0) + (-2 * p1) + (-1 * p2) + (1 * p6) + (2 * p7) + (1 * p8);
 
-      const magnitude = Math.sqrt(gx * gx + gy * gy);
+      const grayMagnitude = Math.sqrt(gx * gx + gy * gy);
 
-      if (magnitude > effectiveThreshold) {
+      // Color Space Gradient (detect colored text like RED, BLUE, etc. even if gray contrast is moderate)
+      const pxIdx = idx * 4;
+      const pxLeft = (idx - 1) * 4;
+      const pxRight = (idx + 1) * 4;
+      const pxTop = (idx - width) * 4;
+      const pxBottom = (idx + width) * 4;
+
+      const drX = src[pxRight] - src[pxLeft];
+      const dgX = src[pxRight + 1] - src[pxLeft + 1];
+      const dbX = src[pxRight + 2] - src[pxLeft + 2];
+
+      const drY = src[pxBottom] - src[pxTop];
+      const dgY = src[pxBottom + 1] - src[pxTop + 1];
+      const dbY = src[pxBottom + 2] - src[pxTop + 2];
+
+      const colorMagnitude = Math.sqrt(drX * drX + dgX * dgX + dbX * dbX + drY * drY + dgY * dgY + dbY * dbY) * 0.7;
+
+      const combinedMagnitude = Math.max(grayMagnitude, colorMagnitude);
+
+      if (combinedMagnitude > effectiveThreshold) {
         binaryEdgeMap[idx] = 1;
         edgeCount++;
 
-        // Edge visualization in canvas format (black line on white bg or white line on black bg)
-        const imgIdx = idx * 4;
-        dst[imgIdx] = 0;
-        dst[imgIdx + 1] = 0;
-        dst[imgIdx + 2] = 0;
-        dst[imgIdx + 3] = 255;
+        dst[pxIdx] = 0;
+        dst[pxIdx + 1] = 0;
+        dst[pxIdx + 2] = 0;
+        dst[pxIdx + 3] = 255;
       } else {
         binaryEdgeMap[idx] = 0;
-        const imgIdx = idx * 4;
-        dst[imgIdx] = 255;
-        dst[imgIdx + 1] = 255;
-        dst[imgIdx + 2] = 255;
-        dst[imgIdx + 3] = 255;
+        dst[pxIdx] = 255;
+        dst[pxIdx + 1] = 255;
+        dst[pxIdx + 2] = 255;
+        dst[pxIdx + 3] = 255;
       }
     }
   }

@@ -61,7 +61,8 @@ self.onmessage = (e: MessageEvent<WorkerMessageData>) => {
         skeletonResult.skeletonMap,
         skeletonResult.width,
         skeletonResult.height,
-        analysisSettings
+        analysisSettings,
+        imageData
       );
 
       // 4. Progress: Organize & Optimize
