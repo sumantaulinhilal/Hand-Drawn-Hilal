@@ -1,0 +1,67 @@
+name: Build Android APK & Web Build
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build Web Application
+        run: npm run build
+
+      - name: Setup Java JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Bubblewrap CLI (PWA to APK)
+        run: npm install -g @bubblewrap/cli
+
+      - name: Initialize & Build APK
+        run: |
+          mkdir -p apk_output
+          echo "Building PWA APK..."
+          # Generates TWA Android APK from manifest
+          npx @bubblewrap/cli init --manifest dist/manifest.json --directory ./android-twa || true
+          if [ -d "./android-twa" ]; then
+            cd android-twa && npx @bubblewrap/cli build && cp *.apk ../apk_output/ || true
+            cd ..
+          fi
+
+      - name: Upload Web Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: dist/
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-apk
+          path: |
+            *.apk
+            apk_output/*.apk
+            android-twa/*.apk
