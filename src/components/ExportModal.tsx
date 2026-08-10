@@ -4,7 +4,7 @@
  */
 
 import React, { useState } from 'react';
-import { Download, Film, FileCode, FileImage, Archive, Check, Loader2, X } from 'lucide-react';
+import { Download, Film, FileCode, FileImage, Archive, Check, Loader2, X, Smartphone, Share2 } from 'lucide-react';
 import {
   exportHighResPng,
   exportWebmVideo,
@@ -34,6 +34,36 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
   if (!isOpen) return null;
 
+  const downloadBlob = async (blob: Blob, filename: string) => {
+    // 1. Try Native Web Share API if supported (works seamlessly in Android WebView/APK)
+    const mimeType = blob.type || (filename.endsWith('.webm') ? 'video/webm' : filename.endsWith('.png') ? 'image/png' : 'application/octet-stream');
+    const file = new File([blob], filename, { type: mimeType });
+
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({
+          files: [file],
+          title: filename,
+          text: 'Hand Draw Animation Export'
+        });
+        return;
+      } catch (err) {
+        if ((err as Error).name === 'AbortError') return;
+      }
+    }
+
+    // 2. Fallback anchor link download for standard browsers
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.target = '_blank';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  };
+
   const handleStartExport = async () => {
     setIsExporting(true);
     setProgress(0);
@@ -43,24 +73,24 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       if (format === 'animated-svg' || format === 'svg') {
         const svgString = generateAnimatedSvg(project);
         const blob = new Blob([svgString], { type: 'image/svg+xml' });
-        downloadBlob(blob, `hand_draw_animation_${project.id}.svg`);
+        await downloadBlob(blob, `hand_draw_animation_${project.id}.svg`);
       } else if (format === 'png') {
         const blob = await exportHighResPng(project, quality);
-        downloadBlob(blob, `hand_draw_frame_${project.id}.png`);
+        await downloadBlob(blob, `hand_draw_frame_${project.id}.png`);
       } else if (format === 'webm') {
         const blob = await exportWebmVideo(
           project,
           { format, quality, fps: 30, transparentBackground: false, includeHandCursor: includeHand },
           (p) => setProgress(p)
         );
-        downloadBlob(blob, `hand_draw_animation_${project.id}.webm`);
+        await downloadBlob(blob, `hand_draw_animation_${project.id}.webm`);
       } else if (format === 'zip-frames') {
         const blob = await exportZipFrames(
           project,
           { format, quality, fps: 24, transparentBackground: false, includeHandCursor: includeHand },
           (p) => setProgress(p)
         );
-        downloadBlob(blob, `hand_draw_frames_${project.id}.zip`);
+        await downloadBlob(blob, `hand_draw_frames_${project.id}.zip`);
       }
 
       setIsDone(true);
@@ -69,15 +99,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     } finally {
       setIsExporting(false);
     }
-  };
-
-  const downloadBlob = (blob: Blob, filename: string) => {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
   };
 
   return (
@@ -222,6 +243,17 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             </div>
           </div>
         )}
+
+        {/* Android Storage Tip */}
+        <div className="p-3.5 bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl space-y-1">
+          <div className="flex items-center gap-1.5 font-bold text-xs text-indigo-600 dark:text-indigo-400">
+            <Smartphone className="w-4 h-4 shrink-0" />
+            <span>Petunjuk Khusus Pengguna HP Android / APK:</span>
+          </div>
+          <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
+            Saat mengklik tombol di bawah, dialog <strong>Bagikan / Simpan File Android</strong> akan terbuka. Pilih <strong>"Simpan ke Perangkat"</strong> atau <strong>"Pengelola File"</strong> agar berkas tersimpan ke memori HP (folder <strong>Unduhan / Download</strong>).
+          </p>
+        </div>
 
         {/* Start Export Button */}
         <button
