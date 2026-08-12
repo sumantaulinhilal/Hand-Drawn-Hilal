@@ -37,12 +37,15 @@ jobs:
 
       - name: Add Capacitor & Build Android APK
         run: |
-          npx cap init "Hand Drawn Hilal" "com.handdrawn.hilal" --web-dir dist
-          npx cap add android
-          npx cap sync android
+          npm install @capacitor/core @capacitor/cli @capacitor/android
+          npx --yes @capacitor/cli init "Hand Drawn Hilal" "com.handdrawn.hilal" --web-dir dist || true
+          npx --yes @capacitor/cli add android || true
+          npx --yes @capacitor/cli sync android
 
           # Inject storage & read permissions into AndroidManifest.xml
-          sed -i '/<\/manifest>/i \    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" \/>\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" \/>' android/app/src/main/AndroidManifest.xml
+          if [ -f "android/app/src/main/AndroidManifest.xml" ]; then
+            grep -q "READ_EXTERNAL_STORAGE" android/app/src/main/AndroidManifest.xml || sed -i '/<\/manifest>/i \    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" \/>\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" \/>' android/app/src/main/AndroidManifest.xml
+          fi
 
           # Create init.gradle to fix duplicate Kotlin stdlib classes issue
           cat << 'EOF' > init.gradle
