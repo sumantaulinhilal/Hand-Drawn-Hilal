@@ -124,7 +124,7 @@ export interface AnimationProject {
 }
 
 export interface ExportOptions {
-  format: 'webm' | 'svg' | 'animated-svg' | 'png' | 'zip-frames';
+  format: 'mp4' | 'webm' | 'svg' | 'animated-svg' | 'png' | 'zip-frames';
   quality: '720p' | '1080p' | '4k';
   fps: number;
   transparentBackground: boolean;

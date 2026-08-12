@@ -4,6 +4,7 @@
  */
 
 import React from 'react';
+import logoImg from '../assets/images/app_logo_1786543757879.jpg';
 import {
   PenTool,
   Upload,
@@ -45,12 +46,12 @@ export const Header: React.FC<HeaderProps> = ({
     <header className="h-16 border-b border-slate-200 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md px-4 flex items-center justify-between sticky top-0 z-30 transition-colors">
       {/* Brand Title */}
       <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 via-blue-600 to-emerald-500 flex items-center justify-center text-white shadow-md shadow-indigo-500/20">
-          <PenTool className="w-5 h-5 animate-pulse" />
+        <div className="w-10 h-10 rounded-xl overflow-hidden shadow-md shadow-indigo-500/20 ring-2 ring-indigo-500/30 shrink-0">
+          <img src={logoImg} alt="Hand Drawn Hilal Logo" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
         </div>
         <div>
           <h1 className="text-base font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
-            HAND DRAW <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-400 font-semibold border border-indigo-200 dark:border-indigo-800">ENGINE</span>
+            HAND DRAWN HILAL <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-400 font-semibold border border-indigo-200 dark:border-indigo-800">STUDIO</span>
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 hidden sm:flex items-center gap-2">
             <span>{statusText || 'Ready'}</span>

@@ -5,8 +5,12 @@
 
 import React, { useState } from 'react';
 import { Download, Film, FileCode, FileImage, Archive, Check, Loader2, X, Smartphone, Share2 } from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
+import { Filesystem, Directory } from '@capacitor/filesystem';
+import { Share } from '@capacitor/share';
 import {
   exportHighResPng,
+  exportVideo,
   exportWebmVideo,
   exportZipFrames,
   generateAnimatedSvg
@@ -18,6 +22,19 @@ interface ExportModalProps {
   onClose: () => void;
   project: AnimationProject;
 }
+
+const blobToBase64 = (blob: Blob): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const dataUrl = reader.result as string;
+      const base64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
+      resolve(base64);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+};
 
 export const ExportModal: React.FC<ExportModalProps> = ({
   isOpen,
@@ -35,7 +52,48 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   if (!isOpen) return null;
 
   const downloadBlob = async (blob: Blob, filename: string) => {
-    // 1. Try Native Web Share API if supported (works seamlessly in Android WebView/APK)
+    const isNative = Capacitor.isNativePlatform();
+
+    if (isNative) {
+      try {
+        const base64Data = await blobToBase64(blob);
+        let savedFileUri = '';
+
+        // 1. Attempt writing directly to Documents / Downloads folder on Android device
+        try {
+          const writeRes = await Filesystem.writeFile({
+            path: filename,
+            data: base64Data,
+            directory: Directory.Documents,
+            recursive: true
+          });
+          savedFileUri = writeRes.uri;
+        } catch (errDoc) {
+          console.warn('Could not write to Documents, falling back to Cache dir:', errDoc);
+          const cacheRes = await Filesystem.writeFile({
+            path: filename,
+            data: base64Data,
+            directory: Directory.Cache,
+            recursive: true
+          });
+          savedFileUri = cacheRes.uri;
+        }
+
+        // 2. Trigger native Android Share Sheet so user can pick Galeri, WhatsApp, Save to Files, etc.
+        await Share.share({
+          title: filename,
+          text: 'Hasil Ekspor Video Hand Drawn Hilal',
+          url: savedFileUri,
+          dialogTitle: 'Simpan ke Perangkat / Bagikan Video'
+        });
+
+        return;
+      } catch (nativeErr) {
+        console.warn('Native Capacitor export error, falling back to Web Share:', nativeErr);
+      }
+    }
+
+    // 3. Try Native Web Share API if supported
     const mimeType = blob.type || (filename.endsWith('.webm') ? 'video/webm' : filename.endsWith('.png') ? 'image/png' : 'application/octet-stream');
     const file = new File([blob], filename, { type: mimeType });
 
@@ -52,7 +110,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       }
     }
 
-    // 2. Fallback anchor link download for standard browsers
+    // 4. Fallback anchor link download for standard browsers
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -77,13 +135,13 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       } else if (format === 'png') {
         const blob = await exportHighResPng(project, quality);
         await downloadBlob(blob, `hand_draw_frame_${project.id}.png`);
-      } else if (format === 'webm') {
-        const blob = await exportWebmVideo(
+      } else if (format === 'mp4' || format === 'webm') {
+        const { blob, filename } = await exportVideo(
           project,
           { format, quality, fps: 30, transparentBackground: false, includeHandCursor: includeHand },
           (p) => setProgress(p)
         );
-        await downloadBlob(blob, `hand_draw_animation_${project.id}.webm`);
+        await downloadBlob(blob, filename);
       } else if (format === 'zip-frames') {
         const blob = await exportZipFrames(
           project,
@@ -112,7 +170,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             <div>
               <h2 className="text-base font-bold text-slate-900 dark:text-white">Export Hand Draw Animation</h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Export to WebM video, Animated SVG, PNG snapshot, or Frame sequence ZIP.
+                Export to MP4 / WebM video, Animated SVG, PNG snapshot, or Frame sequence ZIP.
               </p>
             </div>
           </div>
@@ -130,6 +188,21 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Export Format</label>
           <div className="grid grid-cols-2 gap-3">
             <button
+              onClick={() => setFormat('mp4')}
+              className={`p-3 rounded-xl border text-left transition-all flex items-center gap-3 ${
+                format === 'mp4'
+                  ? 'border-indigo-600 bg-indigo-50/80 dark:bg-indigo-950/60 text-indigo-900 dark:text-indigo-100 ring-2 ring-indigo-600/30'
+                  : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-700 dark:text-slate-300'
+              }`}
+            >
+              <Film className="w-5 h-5 text-indigo-500" />
+              <div>
+                <h4 className="font-bold text-xs">MP4 Video</h4>
+                <p className="text-[10px] text-slate-500">Universal HD MP4 Format</p>
+              </div>
+            </button>
+
+            <button
               onClick={() => setFormat('webm')}
               className={`p-3 rounded-xl border text-left transition-all flex items-center gap-3 ${
                 format === 'webm'
@@ -137,7 +210,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                   : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-700 dark:text-slate-300'
               }`}
             >
-              <Film className="w-5 h-5 text-indigo-500" />
+              <Film className="w-5 h-5 text-blue-500" />
               <div>
                 <h4 className="font-bold text-xs">WebM Video</h4>
                 <p className="text-[10px] text-slate-500">Recorded Canvas Animation</p>
@@ -167,32 +240,17 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                   : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-700 dark:text-slate-300'
               }`}
             >
-              <FileImage className="w-5 h-5 text-blue-500" />
+              <FileImage className="w-5 h-5 text-sky-500" />
               <div>
                 <h4 className="font-bold text-xs">High-Res PNG</h4>
                 <p className="text-[10px] text-slate-500">Static line drawing snapshot</p>
-              </div>
-            </button>
-
-            <button
-              onClick={() => setFormat('zip-frames')}
-              className={`p-3 rounded-xl border text-left transition-all flex items-center gap-3 ${
-                format === 'zip-frames'
-                  ? 'border-indigo-600 bg-indigo-50/80 dark:bg-indigo-950/60 text-indigo-900 dark:text-indigo-100 ring-2 ring-indigo-600/30'
-                  : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-700 dark:text-slate-300'
-              }`}
-            >
-              <Archive className="w-5 h-5 text-amber-500" />
-              <div>
-                <h4 className="font-bold text-xs">Frames ZIP</h4>
-                <p className="text-[10px] text-slate-500">PNG image sequence archive</p>
               </div>
             </button>
           </div>
         </div>
 
         {/* Export Quality Selector */}
-        {(format === 'webm' || format === 'png') && (
+        {(format === 'mp4' || format === 'webm' || format === 'png') && (
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Resolution Quality</label>
             <div className="grid grid-cols-3 gap-2">
@@ -214,7 +272,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         )}
 
         {/* Include Animated Pen / Hand Cursor Toggle */}
-        {format === 'webm' && (
+        {(format === 'mp4' || format === 'webm') && (
           <label className="flex items-center justify-between text-xs font-bold text-slate-700 dark:text-slate-300 pt-1">
             <span>Include Animated Pen / Hand Cursor</span>
             <input

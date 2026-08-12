@@ -154,13 +154,13 @@ export async function exportHighResPng(
 }
 
 /**
- * Records WebM Video from Canvas animation playback
+ * Records WebM or MP4 Video from Canvas animation playback
  */
-export async function exportWebmVideo(
+export async function exportVideo(
   project: AnimationProject,
   options: ExportOptions,
   onProgress: (percent: number) => void
-): Promise<Blob> {
+): Promise<{ blob: Blob; filename: string; mimeType: string; isMp4Native: boolean }> {
   const targetWidth = options.quality === '4k' ? 3840 : options.quality === '720p' ? 1280 : 1920;
   const targetHeight = options.quality === '4k' ? 2160 : options.quality === '720p' ? 720 : 1080;
 
@@ -179,26 +179,54 @@ export async function exportWebmVideo(
   );
 
   const fps = options.fps || 60;
-  // Use manual frame rate capture stream (0 FPS) so every rendered frame is explicitly requested and encoded
-  const stream = canvas.captureStream(0);
+  const stream = canvas.captureStream(fps);
   const videoTrack = stream.getVideoTracks()[0] as MediaStreamTrack & { requestFrame?: () => void };
 
+  let requestedFormat = options.format || 'webm';
   let mimeType = 'video/webm;codecs=vp9';
-  if (!MediaRecorder.isTypeSupported(mimeType)) {
-    mimeType = 'video/webm;codecs=vp8';
-  }
-  if (!MediaRecorder.isTypeSupported(mimeType)) {
-    mimeType = 'video/webm';
+  let isMp4Native = false;
+
+  if (requestedFormat === 'mp4') {
+    const mp4Mimes = [
+      'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+      'video/mp4;codecs=avc1',
+      'video/mp4;codecs=h264',
+      'video/mp4'
+    ];
+    for (const m of mp4Mimes) {
+      if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(m)) {
+        mimeType = m;
+        isMp4Native = true;
+        break;
+      }
+    }
+    // If native MP4 recording isn't supported by browser engine, fallback to WebM
+    if (!isMp4Native) {
+      if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
+        mimeType = 'video/webm;codecs=vp9';
+      } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8')) {
+        mimeType = 'video/webm;codecs=vp8';
+      } else {
+        mimeType = 'video/webm';
+      }
+    }
+  } else {
+    if (!MediaRecorder.isTypeSupported(mimeType)) {
+      mimeType = 'video/webm;codecs=vp8';
+    }
+    if (!MediaRecorder.isTypeSupported(mimeType)) {
+      mimeType = 'video/webm';
+    }
   }
 
   const mediaRecorder = new MediaRecorder(stream, {
     mimeType,
-    videoBitsPerSecond: 16_000_000 // 16 Mbps for crisp, ultra-smooth HD video
+    videoBitsPerSecond: 18_000_000 // High bitrate for crisp, fluid HD video
   });
 
   const chunks: Blob[] = [];
   mediaRecorder.ondataavailable = (e) => {
-    if (e.data.size > 0) chunks.push(e.data);
+    if (e.data && e.data.size > 0) chunks.push(e.data);
   };
 
   const exportBackgroundSettings = {
@@ -206,10 +234,13 @@ export async function exportWebmVideo(
     originalOpacity: project.backgroundSettings.type === 'original' ? project.backgroundSettings.originalOpacity : 0
   };
 
+  const ext = requestedFormat === 'mp4' ? 'mp4' : 'webm';
+  const filename = `hand_draw_animation_${project.id}.${ext}`;
+
   return new Promise((resolve) => {
     mediaRecorder.onstop = () => {
       const blob = new Blob(chunks, { type: mimeType });
-      resolve(blob);
+      resolve({ blob, filename, mimeType, isMp4Native });
     };
 
     mediaRecorder.start(100);
@@ -255,11 +286,11 @@ export async function exportWebmVideo(
 
         onProgress(Math.min(100, Math.round((currentFrame / totalFrames) * 100)));
 
-        // Micro tick delay to yield main thread and guarantee MediaRecorder encodes frame cleanly
+        // Frame timing delay for smooth MediaRecorder frame ingestion
         await new Promise((r) => setTimeout(r, frameDelayMs));
       }
 
-      // Add a clean hold frames at the end
+      // Hold end frames cleanly
       const holdFrames = Math.ceil(fps * (project.animationSettings.endDelay || 0.8));
       for (let h = 0; h < holdFrames; h++) {
         if (videoTrack && typeof videoTrack.requestFrame === 'function') {
@@ -270,11 +301,23 @@ export async function exportWebmVideo(
 
       setTimeout(() => {
         mediaRecorder.stop();
-      }, 250);
+      }, 200);
     };
 
     exportAsyncLoop();
   });
+}
+
+/**
+ * Backward compatibility wrapper for WebM exports
+ */
+export async function exportWebmVideo(
+  project: AnimationProject,
+  options: ExportOptions,
+  onProgress: (percent: number) => void
+): Promise<Blob> {
+  const result = await exportVideo(project, { ...options, format: 'webm' }, onProgress);
+  return result.blob;
 }
 
 /**
